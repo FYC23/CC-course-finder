@@ -27,11 +27,11 @@ There is no existing tool that does both in one query. The result: students have
 
 Two components:
 
-**1. ASSIST layer** *(mostly solved — fork existing scrapers)*
+**1. ASSIST layer** *(implemented here as a first-pass ingest pipeline)*
 
 - Input: target school + major (e.g., UCLA CS)
-- Query ASSIST for all transferable courses across all CCs
-- Output: `{cc_name, course_code, course_name, uc_equivalent}`
+- Query ASSIST for agreements across CCs, download the corresponding PDF artifacts, and parse simple direct mappings
+- Output: normalized articulation rows in SQLite, queryable by target requirement/equivalent (see CLI examples below)
 
 **2. Schedule layer** *(the novel part)*
 
@@ -40,7 +40,7 @@ Two components:
 - Parse: is this course offered in the target term? Online or in-person?
 - Output: filter ASSIST results to only currently-offered courses
 
-**Stack:** Python, `requests`, `BeautifulSoup`, maybe `rapidfuzz` for fuzzy course name matching
+**Stack:** Python, `requests` + `pypdf` (ASSIST PDFs); schedule scraping likely `BeautifulSoup` later; maybe `rapidfuzz` if fuzzy matching becomes necessary
 
 **Final output:** "Here are 12 sections of Calc II transferable to UCLA CS, offered Summer 2026 — 5 are online."
 
@@ -63,6 +63,8 @@ This repo now includes a first-pass ASSIST ingestion pipeline under `src/assist`
 - `src/assist/parser.py` runs a minimal deterministic parser for direct mappings.
 - `src/assist/store.py` persists normalized articulation rows in SQLite.
 - `src/assist/cli.py` provides ingest/query commands.
+
+Artifacts are cached under `data/assist_artifacts/`, and the local SQLite database lives at `data/assist.sqlite3`.
 
 ### Local environment
 
@@ -98,6 +100,26 @@ uv run python -m src.assist.cli query \
 `--max-cc` caps processing by unique community colleges, not raw ASSIST agreement candidate rows.
 
 If ASSIST changes endpoint routing, you can override `--api-prefix`.
+
+### Schedule query (pilot v1)
+
+The schedule layer now includes a pilot query command under `src/schedule`.
+
+```bash
+uv run python -m src.schedule.cli query \
+  --target-school "University of California, Los Angeles" \
+  --target-major "Computer Science" \
+  --term "Summer 2026" \
+  --cc-id 2 \
+  --requirement "MATH 31B"
+```
+
+Current v1 scope:
+
+- Canonical term input is a human label like `"Summer 2026"` (strict `Spring|Summer|Fall YYYY`).
+- Initial support is one pilot source: Evergreen Valley College (`cc_id=2`).
+- Course matching is exact on ASSIST `course_code` in this first slice.
+- Banner/PeopleSoft generalized families are deferred until more real CC adapters are validated.
 
 ## ASSIST integration incident notes
 
