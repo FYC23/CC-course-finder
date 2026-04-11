@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import requests
 
 from src.assist.models import ArticulationRow, IngestRun
 from src.assist.store import ensure_db, save_rows, save_run
@@ -15,6 +16,9 @@ from src.schedule.service import ScheduleService
 class _FakeProvider(ScheduleProvider):
     def __init__(self) -> None:
         self.calls: list[tuple[str, int, str]] = []
+
+    def supports_source(self, source) -> bool:
+        return source.system == "banner"
 
     def search_course(
         self, *, source, term, course_code: str
@@ -95,8 +99,8 @@ def _seed_assist_rows(db_path: Path) -> None:
                 target_major=run.target_major,
                 target_requirement="MATH 31A",
                 uc_equivalent="MATH 31A",
-                cc_name="Evergreen Valley College",
-                cc_id=2,
+                cc_name="San Jose City College",
+                cc_id=136,
                 course_code="MATH 1A",
                 course_title="Calculus I",
                 agreement_id="125",
@@ -111,6 +115,11 @@ def test_catalog_lookup() -> None:
     source = get_college_source(2)
     assert source.cc_name == "Evergreen Valley College"
     assert source.system == "banner"
+    assert source.locations == ("EVC",)
+
+    sjcc = get_college_source(136)
+    assert sjcc.cc_name == "San Jose City College"
+    assert sjcc.locations == ("SJCC",)
 
     with pytest.raises(KeyError):
         get_college_source(9999)
@@ -126,13 +135,57 @@ def test_schedule_service_queries_distinct_assist_courses(tmp_path: Path) -> Non
         target_school="University of California, Los Angeles",
         target_major="Computer Science",
         term_label="Summer 2026",
-        cc_id=2,
+        cc_id=None,
         requirement_filter="MATH 31",
     )
 
     assert len(out) == 2
     assert {item.course_code for item in out} == {"MATH 1A", "MATH 1B"}
     assert provider.calls == [
-        ("Summer 2026", 2, "MATH 1A"),
         ("Summer 2026", 2, "MATH 1B"),
+        ("Summer 2026", 136, "MATH 1A"),
     ]
+
+
+def test_schedule_service_raises_on_unsupported_source(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_assist_rows(db_path)
+
+    class _UnsupportedProvider(_FakeProvider):
+        def supports_source(self, source) -> bool:
+            return False
+
+    provider = _UnsupportedProvider()
+    service = ScheduleService(db_path=db_path, provider=provider)
+
+    with pytest.raises(ValueError, match="No provider configured for source system"):
+        service.query(
+            target_school="University of California, Los Angeles",
+            target_major="Computer Science",
+            term_label="Summer 2026",
+            cc_id=2,
+            requirement_filter="MATH 31B",
+        )
+
+
+def test_schedule_service_fail_soft_on_request_error(tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_assist_rows(db_path)
+
+    class _FailingProvider(_FakeProvider):
+        def search_course(self, *, source, term, course_code: str) -> CourseAvailability:
+            raise requests.RequestException("timeout")
+
+    provider = _FailingProvider()
+    service = ScheduleService(db_path=db_path, provider=provider)
+    out = service.query(
+        target_school="University of California, Los Angeles",
+        target_major="Computer Science",
+        term_label="Summer 2026",
+        cc_id=2,
+        requirement_filter="MATH 31B",
+    )
+
+    assert len(out) == 1
+    assert out[0].offered is False
+    assert out[0].raw_summary == "[request_error type=RequestException]"

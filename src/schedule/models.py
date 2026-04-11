@@ -9,6 +9,7 @@ class CollegeScheduleSource:
     cc_name: str
     system: str
     base_url: str
+    locations: tuple[str, ...]
 
 
 @dataclass(frozen=True)

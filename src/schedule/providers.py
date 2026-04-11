@@ -7,6 +7,8 @@ from .term import ParsedTerm
 
 
 class ScheduleProvider(Protocol):
+    def supports_source(self, source: CollegeScheduleSource) -> bool: ...
+
     def search_course(
         self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str
     ) -> CourseAvailability: ...

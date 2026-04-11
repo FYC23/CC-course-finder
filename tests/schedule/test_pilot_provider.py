@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 
 from src.schedule.catalog import get_college_source
-from src.schedule.pilot_evergreen import EvergreenBannerProvider
+from src.schedule.banner_ellucian import BannerEllucianProvider
+from src.schedule.models import CollegeScheduleSource
 from src.schedule.term import parse_term_label
 
 
@@ -84,7 +85,7 @@ def test_pilot_provider_uses_json_search_and_parses_sections() -> None:
             )
         ],
     )
-    provider = EvergreenBannerProvider(session=session)
+    provider = BannerEllucianProvider(session=session)
 
     out = provider.search_course(
         source=source, term=parse_term_label("Summer 2026"), course_code="MATH 1B"
@@ -156,7 +157,7 @@ def test_pilot_provider_falls_back_to_sections_endpoint_when_needed() -> None:
             ),
         ],
     )
-    provider = EvergreenBannerProvider(session=session)
+    provider = BannerEllucianProvider(session=session)
 
     out = provider.search_course(
         source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
@@ -210,7 +211,7 @@ def test_pilot_provider_tries_keyword_variants_until_match() -> None:
             ),
         ],
     )
-    provider = EvergreenBannerProvider(session=session)
+    provider = BannerEllucianProvider(session=session)
 
     out = provider.search_course(
         source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
@@ -268,7 +269,7 @@ def test_pilot_provider_collects_multiple_section_pages() -> None:
             ),
         ],
     )
-    provider = EvergreenBannerProvider(session=session)
+    provider = BannerEllucianProvider(session=session)
 
     out = provider.search_course(
         source=source, term=parse_term_label("Summer 2026"), course_code="MATH 1B"
@@ -279,6 +280,55 @@ def test_pilot_provider_collects_multiple_section_pages() -> None:
     assert out.sections[0].modality == "online"
     assert session.calls[1][1]["pageNumber"] == "1"
     assert session.calls[2][1]["pageNumber"] == "2"
+
+
+def test_pilot_provider_accepts_string_total_pages() -> None:
+    source = get_college_source(2)
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            )
+        ],
+        post_responses=[
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={
+                    "Sections": [],
+                    "TotalPages": "2",
+                },
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={
+                    "Sections": [
+                        {
+                            "Synonym": "10003",
+                            "AvailabilityStatusDisplay": "Open",
+                            "InstructionalMethodsDisplay": ["Online"],
+                            "Title": "Course B",
+                            "CourseName": "MATH-1B",
+                        }
+                    ],
+                    "TotalPages": "2",
+                },
+            ),
+        ],
+    )
+    provider = BannerEllucianProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="MATH 1B"
+    )
+
+    assert out.offered is True
+    section_calls = [
+        call for call in session.calls if call[1].get("searchResultsView") == "SectionListing"
+    ]
+    assert len(section_calls) == 2
 
 
 def test_pilot_provider_handles_missing_course() -> None:
@@ -303,10 +353,10 @@ def test_pilot_provider_handles_missing_course() -> None:
             ),
         ],
     )
-    provider = EvergreenBannerProvider(session=session)
+    provider = BannerEllucianProvider(session=session)
 
     out = provider.search_course(
-        source=source, term=parse_term_label("Summer 2026"), course_code="BIOLOGY"
+        source=source, term=parse_term_label("Summer 2026"), course_code="BIOLOGY!"
     )
     assert out.offered is False
     assert out.sections == []
@@ -347,7 +397,7 @@ def test_pilot_provider_filters_non_matching_section_listing_rows() -> None:
             )
         ],
     )
-    provider = EvergreenBannerProvider(session=session)
+    provider = BannerEllucianProvider(session=session)
 
     out = provider.search_course(
         source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
@@ -418,7 +468,7 @@ def test_pilot_provider_marks_unknown_identity_rows_in_summary() -> None:
             ),
         ],
     )
-    provider = EvergreenBannerProvider(session=session)
+    provider = BannerEllucianProvider(session=session)
 
     out = provider.search_course(
         source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
@@ -458,7 +508,7 @@ def test_pilot_provider_prefers_course_object_over_course_name() -> None:
             )
         ],
     )
-    provider = EvergreenBannerProvider(session=session)
+    provider = BannerEllucianProvider(session=session)
 
     out = provider.search_course(
         source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
@@ -495,12 +545,173 @@ def test_pilot_provider_keeps_match_stats_when_raw_summary_is_long() -> None:
             )
         ],
     )
-    provider = EvergreenBannerProvider(session=session)
+    provider = BannerEllucianProvider(session=session)
 
     out = provider.search_course(
         source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
     )
 
     assert out.offered is True
-    assert len(out.raw_summary) <= 500
-    assert "[match_filter matched=1 unknown=0 dropped_nonmatch=0]" in out.raw_summary
+    assert out.raw_summary == "[match_filter matched=1 unknown=0 dropped_nonmatch=0]"
+
+
+def test_pilot_provider_uses_sjcc_location_token() -> None:
+    source = get_college_source(136)
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            )
+        ],
+        post_responses=[
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={
+                    "Sections": [
+                        {
+                            "Synonym": "60001",
+                            "AvailabilityStatusDisplay": "Open",
+                            "InstructionalMethodsDisplay": ["Online"],
+                            "CourseName": "MATH-1B",
+                        }
+                    ]
+                },
+            )
+        ],
+    )
+    provider = BannerEllucianProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="MATH 1B"
+    )
+
+    assert out.offered is True
+    assert session.calls[0][1]["locations"] == "SJCC"
+    assert "SJCC" in session.calls[1][1]["locations"]
+
+
+def test_pilot_provider_rejects_unsupported_source_system() -> None:
+    source = CollegeScheduleSource(
+        cc_id=999,
+        cc_name="Unsupported College",
+        system="peoplesoft",
+        base_url="https://example.edu",
+        locations=("MAIN",),
+    )
+    provider = BannerEllucianProvider()
+
+    try:
+        provider.search_course(
+            source=source, term=parse_term_label("Summer 2026"), course_code="MATH 1B"
+        )
+        raise AssertionError("expected ValueError for unsupported source")
+    except ValueError as err:
+        assert "does not support source system='peoplesoft'" in str(err)
+
+
+def test_pilot_provider_caps_section_listing_pages() -> None:
+    source = get_college_source(2)
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            )
+        ],
+        post_responses=[
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={
+                    "Sections": [],
+                    "TotalPages": 10,
+                },
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"Sections": [], "TotalPages": 10},
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"Sections": [], "TotalPages": 10},
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"Sections": [], "TotalPages": 10},
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"CourseFullModels": []},
+            ),
+        ],
+    )
+    provider = BannerEllucianProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="BIOLOGY!"
+    )
+
+    assert out.offered is False
+    page_calls = [
+        call
+        for call in session.calls
+        if call[1].get("searchResultsView") == "SectionListing"
+    ]
+    assert len(page_calls) == 4
+
+
+def test_pilot_provider_caps_catalog_section_calls() -> None:
+    source = get_college_source(2)
+    catalog_rows = [
+        {
+            "Id": f"course-{idx}",
+            "MatchingSectionIds": [f"sec-{idx}"],
+            "Course": {"SubjectCode": "MATH", "Number": "067"},
+        }
+        for idx in range(20)
+    ]
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            )
+        ],
+        post_responses=[
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"Sections": []},
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"CourseFullModels": catalog_rows},
+            ),
+            *[
+                _FakeResponse(
+                    text="",
+                    url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Sections",
+                    json_obj={"SectionsRetrieved": {"TermsAndSections": []}},
+                )
+                for _ in range(12)
+            ],
+        ],
+    )
+    provider = BannerEllucianProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="BIOLOGY!"
+    )
+
+    assert out.offered is False
+    section_calls = [
+        call for call in session.calls if call[0].endswith("/Student/Courses/Sections")
+    ]
+    assert len(section_calls) == 12

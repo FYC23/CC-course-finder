@@ -8,8 +8,8 @@ import typer
 
 from src.assist.config import DB_PATH
 
+from .banner_ellucian import BannerEllucianProvider
 from .catalog import get_college_source
-from .pilot_evergreen import EvergreenBannerProvider
 from .service import ScheduleService
 
 app = typer.Typer(help="Schedule layer query CLI.")
@@ -29,18 +29,24 @@ def query(
     cc_id: int = typer.Option(
         2,
         help=(
-            "Community college id. v1 only supports configured pilot sources; "
+            "Community college id for configured schedule sources; "
             "default is Evergreen Valley College (2)."
         ),
     ),
 ) -> None:
     """Query schedule offerings for ASSIST course matches."""
+    provider = BannerEllucianProvider()
     try:
-        get_college_source(cc_id)
+        source = get_college_source(cc_id)
     except KeyError as err:
         raise typer.BadParameter(str(err), param_hint="--cc-id") from err
+    if not provider.supports_source(source):
+        raise typer.BadParameter(
+            f"No provider configured for source system={source.system!r} (cc_id={source.cc_id})",
+            param_hint="--cc-id",
+        )
 
-    service = ScheduleService(db_path=DB_PATH, provider=EvergreenBannerProvider())
+    service = ScheduleService(db_path=DB_PATH, provider=provider)
     try:
         rows = service.query(
             target_school=target_school,

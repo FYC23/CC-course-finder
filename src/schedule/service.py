@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import requests
+
 from .catalog import get_college_source
 from .models import CourseAvailability
 from .providers import ScheduleProvider
@@ -33,16 +35,41 @@ class ScheduleService:
             requirement_filter=requirement_filter,
         )
         results: list[CourseAvailability] = []
+        cache: dict[tuple[int, str, str], CourseAvailability] = {}
         for row_cc_id, course_code in course_keys:
             try:
                 source = get_college_source(row_cc_id)
             except KeyError:
                 continue
-            results.append(
-                self._provider.search_course(
+
+            if not self._provider.supports_source(source):
+                raise ValueError(
+                    f"No provider configured for source system={source.system!r} "
+                    f"(cc_id={source.cc_id}, cc_name={source.cc_name})"
+                )
+
+            cache_key = (source.cc_id, term.label, course_code)
+            if cache_key in cache:
+                results.append(cache[cache_key])
+                continue
+
+            try:
+                availability = self._provider.search_course(
                     source=source, term=term, course_code=course_code
                 )
-            )
+            except requests.RequestException as err:
+                availability = CourseAvailability(
+                    cc_id=source.cc_id,
+                    cc_name=source.cc_name,
+                    term=term.label,
+                    course_code=course_code,
+                    offered=False,
+                    sections=[],
+                    source_url=source.base_url,
+                    raw_summary=f"[request_error type={type(err).__name__}]",
+                )
+            cache[cache_key] = availability
+            results.append(availability)
         return results
 
     def _select_candidate_course_keys(

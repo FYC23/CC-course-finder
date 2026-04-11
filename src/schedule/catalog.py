@@ -8,7 +8,15 @@ _SOURCES_BY_CC_ID: dict[int, CollegeScheduleSource] = {
         cc_name="Evergreen Valley College",
         system="banner",
         base_url="https://colss-prod.ec.sjeccd.edu/Student/Courses/SearchResult",
-    )
+        locations=("EVC",),
+    ),
+    136: CollegeScheduleSource(
+        cc_id=136,
+        cc_name="San Jose City College",
+        system="banner",
+        base_url="https://colss-prod.ec.sjeccd.edu/Student/Courses/SearchResult",
+        locations=("SJCC",),
+    ),
 }
 
 
