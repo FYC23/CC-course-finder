@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Type checkers & test caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Cursor / IDE (local debug; keep .cursor/rules if you use them)
+.cursor/debug*.log
+.idea/
+
+# Project: generated data & scraped artifacts (rebuild via pipeline)
+data/assist.sqlite3
+data/assist_artifacts/
+
+# Vendored reference repos (clone locally; link from README)
+Reference projects/
