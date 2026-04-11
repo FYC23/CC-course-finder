@@ -55,6 +55,7 @@ def test_pilot_provider_uses_json_search_and_parses_sections() -> None:
                 "AvailabilityStatusDisplay": "Open",
                 "InstructionalMethodsDisplay": ["Online, Asynchronous"],
                 "Title": "Calculus II",
+                "CourseName": "MATH-1B",
                 "FacultyDisplay": ["Ada Lovelace"],
             },
             {
@@ -63,6 +64,7 @@ def test_pilot_provider_uses_json_search_and_parses_sections() -> None:
                 "AvailabilityStatusDisplay": "Closed",
                 "InstructionalMethodsDisplay": ["Lecture"],
                 "Title": "Calculus II",
+                "CourseName": "MATH-1B",
                 "FacultyDisplay": ["Bob Babbage"],
             },
         ]
@@ -102,7 +104,13 @@ def test_pilot_provider_falls_back_to_sections_endpoint_when_needed() -> None:
     source = get_college_source(2)
     section_listing_payload = {"Sections": []}
     catalog_listing_payload = {
-        "CourseFullModels": [{"Id": "course-1", "MatchingSectionIds": ["sec-1"]}]
+        "CourseFullModels": [
+            {
+                "Id": "course-1",
+                "MatchingSectionIds": ["sec-1"],
+                "Course": {"SubjectCode": "MATH", "Number": "067"},
+            }
+        ]
     }
     sections_payload = {
         "SectionsRetrieved": {
@@ -151,7 +159,7 @@ def test_pilot_provider_falls_back_to_sections_endpoint_when_needed() -> None:
     provider = EvergreenBannerProvider(session=session)
 
     out = provider.search_course(
-        source=source, term=parse_term_label("Summer 2026"), course_code="BIOLOGY"
+        source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
     )
     assert out.offered is True
     assert out.sections[0].section_id == "77777"
@@ -194,6 +202,7 @@ def test_pilot_provider_tries_keyword_variants_until_match() -> None:
                             "AvailabilityStatusDisplay": "Open",
                             "InstructionalMethodsDisplay": ["Online"],
                             "Title": "Precalculus",
+                            "CourseName": "MATH-067",
                             "FacultyDisplay": ["Ada"],
                         }
                     ]
@@ -233,6 +242,7 @@ def test_pilot_provider_collects_multiple_section_pages() -> None:
                             "AvailabilityStatusDisplay": "Open",
                             "InstructionalMethodsDisplay": "Online, Asynchronous",
                             "Title": "Course A",
+                            "CourseName": "MATH-1B",
                             "FacultyDisplay": ["One"],
                         }
                     ],
@@ -249,6 +259,7 @@ def test_pilot_provider_collects_multiple_section_pages() -> None:
                             "AvailabilityStatusDisplay": "Closed",
                             "InstructionalMethodsDisplay": ["Lecture"],
                             "Title": "Course A",
+                            "CourseName": "MATH-1B",
                             "FacultyDisplay": ["Two"],
                         }
                     ],
@@ -299,3 +310,197 @@ def test_pilot_provider_handles_missing_course() -> None:
     )
     assert out.offered is False
     assert out.sections == []
+
+
+def test_pilot_provider_filters_non_matching_section_listing_rows() -> None:
+    source = get_college_source(2)
+    payload = {
+        "Sections": [
+            {
+                "Synonym": "20001",
+                "AvailabilityStatusDisplay": "Open",
+                "InstructionalMethodsDisplay": ["Online"],
+                "Title": "Math for Stats",
+                "CourseName": "MATH-067",
+            },
+            {
+                "Synonym": "20002",
+                "AvailabilityStatusDisplay": "Open",
+                "InstructionalMethodsDisplay": ["Online"],
+                "Title": "Intro Stats",
+                "CourseName": "STAT-C1000",
+            },
+        ]
+    }
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            )
+        ],
+        post_responses=[
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj=payload,
+            )
+        ],
+    )
+    provider = EvergreenBannerProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
+    )
+
+    assert out.offered is True
+    assert [section.section_id for section in out.sections] == ["20001"]
+    assert "dropped_nonmatch=1" in out.raw_summary
+
+
+def test_pilot_provider_marks_unknown_identity_rows_in_summary() -> None:
+    source = get_college_source(2)
+    payload = {
+        "Sections": [
+            {
+                "Synonym": "30001",
+                "AvailabilityStatusDisplay": "Open",
+                "InstructionalMethodsDisplay": ["Online"],
+                "Title": "Unknown Math Section",
+            }
+        ]
+    }
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            ),
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            ),
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            ),
+        ],
+        post_responses=[
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj=payload,
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"CourseFullModels": []},
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj=payload,
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"CourseFullModels": []},
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj=payload,
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"CourseFullModels": []},
+            ),
+        ],
+    )
+    provider = EvergreenBannerProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
+    )
+
+    assert out.offered is False
+    assert out.sections == []
+    assert "unknown=1" in out.raw_summary
+
+
+def test_pilot_provider_prefers_course_object_over_course_name() -> None:
+    source = get_college_source(2)
+    payload = {
+        "Sections": [
+            {
+                "Synonym": "40001",
+                "AvailabilityStatusDisplay": "Open",
+                "InstructionalMethodsDisplay": ["Online"],
+                "Title": "Math Section",
+                "CourseName": "STAT-C1000",
+                "Course": {"SubjectCode": "MATH", "Number": "067"},
+            }
+        ]
+    }
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            )
+        ],
+        post_responses=[
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj=payload,
+            )
+        ],
+    )
+    provider = EvergreenBannerProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
+    )
+
+    assert out.offered is True
+    assert [section.section_id for section in out.sections] == ["40001"]
+
+
+def test_pilot_provider_keeps_match_stats_when_raw_summary_is_long() -> None:
+    source = get_college_source(2)
+    payload = {
+        "Sections": [
+            {
+                "Synonym": "50001",
+                "AvailabilityStatusDisplay": "Open",
+                "InstructionalMethodsDisplay": ["Online"],
+                "CourseName": "MATH-067",
+            }
+        ]
+    }
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            )
+        ],
+        post_responses=[
+            _FakeResponse(
+                text="x" * 700,
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj=payload,
+            )
+        ],
+    )
+    provider = EvergreenBannerProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="MATH 067"
+    )
+
+    assert out.offered is True
+    assert len(out.raw_summary) <= 500
+    assert "[match_filter matched=1 unknown=0 dropped_nonmatch=0]" in out.raw_summary
