@@ -35,7 +35,10 @@ def ingest(
     ),
     max_cc: int = typer.Option(
         8,
-        help="Max community colleges to ingest for this run (v1 safety guard).",
+        help=(
+            "Max unique community colleges to ingest for this run "
+            "(v1 safety guard)."
+        ),
     ),
     allow_non_numeric_keys: bool = typer.Option(
         False,

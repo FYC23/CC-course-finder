@@ -46,7 +46,16 @@ def ingest_target_major(
     _emit(f"Discovery complete: {len(refs)} agreements to process.")
 
     all_rows: list[ArticulationRow] = []
+    download_count = 0
+    cache_hit_count = 0
     total_refs = len(refs)
+
+    def _fetch_with_status(ref: AgreementRef) -> tuple[Path, bool]:
+        fetch_with_status = getattr(fetcher, "fetch_artifact_with_status", None)
+        if callable(fetch_with_status):
+            return fetch_with_status(ref)
+        return fetcher.fetch_artifact(ref), True
+
     for index, ref in enumerate(refs, start=1):
         try:
             _emit(
@@ -59,7 +68,11 @@ def ingest_target_major(
                     f"[{index}/{total_refs}] Fetching artifact for "
                     f"{parse_ref.cc_name} agreement {parse_ref.agreement_id}."
                 )
-                pdf_path = fetcher.fetch_artifact(parse_ref)
+                pdf_path, downloaded = _fetch_with_status(parse_ref)
+                if downloaded:
+                    download_count += 1
+                else:
+                    cache_hit_count += 1
             except requests.HTTPError as err:
                 status_code = err.response.status_code if err.response is not None else None
                 if status_code != 404 or not ref.fallback_agreement_id:
@@ -91,7 +104,11 @@ def ingest_target_major(
                         f"[{index}/{total_refs}] Fetching fallback artifact for "
                         f"{parse_ref.cc_name} agreement {parse_ref.agreement_id}."
                     )
-                    pdf_path = fetcher.fetch_artifact(parse_ref)
+                    pdf_path, downloaded = _fetch_with_status(parse_ref)
+                    if downloaded:
+                        download_count += 1
+                    else:
+                        cache_hit_count += 1
                 except Exception:
                     _emit(
                         "Fallback artifact fetch failed "
@@ -113,6 +130,11 @@ def ingest_target_major(
             )
             # Keep ingest resilient for v1; problematic artifacts can be retried later.
             continue
+
+    _emit(
+        "Artifact fetch stats: "
+        f"downloaded={download_count}, cache_hits={cache_hit_count}."
+    )
 
     pre_normalize_count = len(all_rows)
     all_rows = filter_empty_course_codes(dedupe_rows(all_rows))

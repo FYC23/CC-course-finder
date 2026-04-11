@@ -158,4 +158,5 @@ def test_ingest_emits_progress_logs(tmp_path: Path, monkeypatch) -> None:
     assert any("Discovering agreements" in msg for msg in logs)
     assert any("Processing Evergreen Valley College" in msg for msg in logs)
     assert any("Parsed 1 articulation rows" in msg for msg in logs)
+    assert any("Artifact fetch stats" in msg for msg in logs)
     assert any("Ingest complete" in msg for msg in logs)

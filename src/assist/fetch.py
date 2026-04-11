@@ -25,13 +25,19 @@ class ArtifactFetcher:
         return self.artifact_dir / filename
 
     def fetch_artifact(self, ref: AgreementRef, force: bool = False) -> Path:
+        path, _ = self.fetch_artifact_with_status(ref, force=force)
+        return path
+
+    def fetch_artifact_with_status(
+        self, ref: AgreementRef, force: bool = False
+    ) -> tuple[Path, bool]:
         path = self.artifact_path(ref)
         if path.exists() and not force:
-            return path
+            return path, False
         artifact_url = self._encoded_artifact_url(ref.artifact_url)
         payload = self.client.get_bytes(artifact_url, accept_pdf=True)
         path.write_bytes(payload)
-        return path
+        return path, True
 
     @staticmethod
     def _encoded_artifact_url(url: str) -> str:

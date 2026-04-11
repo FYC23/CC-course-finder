@@ -53,3 +53,25 @@ def test_fetch_artifact_encodes_non_numeric_key_path(tmp_path: Path) -> None:
     assert client.last_accept_pdf is True
     assert client.last_path == "/api/artifacts/76/54/to/117/Major/abc%20123"
 
+
+def test_fetch_artifact_with_status_reports_cache_hit(tmp_path: Path) -> None:
+    client = _DummyClient()
+    fetcher = ArtifactFetcher(client=client, artifact_dir=tmp_path)
+    ref = AgreementRef(
+        target_school_id=117,
+        target_school_name="University of California, Los Angeles",
+        target_major="Computer Science",
+        cc_id=54,
+        cc_name="De Anza College",
+        academic_year_id=76,
+        academic_year_label="2025-2026",
+        agreement_id="26089328",
+        artifact_url="/api/artifacts/26089328",
+    )
+    first_path, first_downloaded = fetcher.fetch_artifact_with_status(ref)
+    second_path, second_downloaded = fetcher.fetch_artifact_with_status(ref)
+
+    assert first_path == second_path
+    assert first_downloaded is True
+    assert second_downloaded is False
+

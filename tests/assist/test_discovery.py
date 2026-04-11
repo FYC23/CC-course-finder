@@ -133,6 +133,64 @@ class MixedSameYearOrderClient:
         raise AssertionError(f"Unexpected path: {path}")
 
 
+class DuplicateCandidateClient:
+    def __init__(self) -> None:
+        self.api_prefix = "/api"
+
+    def get_json(self, path: str) -> Any:
+        if path == "/api/institutions":
+            return [
+                {
+                    "id": 11,
+                    "isCommunityCollege": False,
+                    "names": [{"name": "University of California, Los Angeles"}],
+                },
+                {
+                    "id": 54,
+                    "isCommunityCollege": True,
+                    "names": [{"name": "De Anza College"}],
+                },
+                {
+                    "id": 55,
+                    "isCommunityCollege": True,
+                    "names": [{"name": "Foothill College"}],
+                },
+            ]
+        if path == "/api/academicYears":
+            return [
+                {"id": 75, "code": "2024-2025"},
+                {"id": 74, "code": "2023-2024"},
+            ]
+        if path == "/api/institutions/11/agreements":
+            return [
+                {
+                    "isCommunityCollege": True,
+                    "institutionParentId": 54,
+                    "institutionParentName": "De Anza College",
+                    "sendingYearIds": [74],
+                },
+                {
+                    "isCommunityCollege": True,
+                    "institutionParentId": 54,
+                    "institutionParentName": "De Anza College",
+                    "sendingYearIds": [75],
+                },
+                {
+                    "isCommunityCollege": True,
+                    "institutionParentId": 55,
+                    "institutionParentName": "Foothill College",
+                    "sendingYearIds": [75],
+                },
+            ]
+        if "sendingInstitutionId=54" in path and "academicYearId=75" in path:
+            return {"reports": [{"label": "Computer Science", "key": 33333333}]}
+        if "sendingInstitutionId=54" in path and "academicYearId=74" in path:
+            return {"reports": [{"label": "Computer Science", "key": 11111111}]}
+        if "sendingInstitutionId=55" in path and "academicYearId=75" in path:
+            return {"reports": [{"label": "Computer Science", "key": 22222222}]}
+        raise AssertionError(f"Unexpected path: {path}")
+
+
 def test_discover_major_agreements_returns_expected_shape() -> None:
     discovery = AssistDiscovery(client=FakeClient())
     refs = discovery.discover_major_agreements(
@@ -196,4 +254,27 @@ def test_discover_major_agreements_prefers_non_numeric_in_same_year() -> None:
     assert ref.academic_year_id == 75
     assert ref.agreement_id == "75/54/to/11/Major/new"
     assert ref.fallback_agreement_id == "11111111"
+
+
+def test_discover_major_agreements_dedupes_duplicate_candidates_by_cc() -> None:
+    discovery = AssistDiscovery(client=DuplicateCandidateClient())
+    refs = discovery.discover_major_agreements(
+        target_school_name="University of California, Los Angeles",
+        major_name="Computer Science",
+        max_community_colleges=5,
+    )
+    assert len(refs) == 2
+    de_anza = next(r for r in refs if r.cc_id == 54)
+    assert de_anza.agreement_id == "33333333"
+
+
+def test_discover_major_agreements_limits_unique_ccs_not_raw_candidates() -> None:
+    discovery = AssistDiscovery(client=DuplicateCandidateClient())
+    refs = discovery.discover_major_agreements(
+        target_school_name="University of California, Los Angeles",
+        major_name="Computer Science",
+        max_community_colleges=1,
+    )
+    assert len(refs) == 1
+    assert refs[0].cc_id == 54
 

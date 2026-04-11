@@ -95,6 +95,8 @@ uv run python -m src.assist.cli query \
   --requirement "MATH 31B"
 ```
 
+`--max-cc` caps processing by unique community colleges, not raw ASSIST agreement candidate rows.
+
 If ASSIST changes endpoint routing, you can override `--api-prefix`.
 
 ## ASSIST integration incident notes

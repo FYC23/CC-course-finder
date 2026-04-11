@@ -127,7 +127,8 @@ class AssistDiscovery:
         target_school = self.resolve_school(target_school_name)
         institutions_by_id = {i.id: i.name for i in self.get_institutions()}
         year_labels = self.get_year_labels()
-        refs: list[AgreementRef] = []
+        refs_by_cc: dict[int, AgreementRef] = {}
+        cc_order: list[int] = []
 
         agreement_candidates = list(self._agreement_candidates(target_school.id))
         for candidate in agreement_candidates:
@@ -143,85 +144,127 @@ class AssistDiscovery:
             if not sending_years:
                 continue
             candidate_years = sorted({int(y) for y in sending_years}, reverse=True)
-            selected: tuple[int, str, str] | None = None
-            numeric_fallback: tuple[int, str, str] | None = None
-            for year_id in candidate_years:
-                reports = self._reports_for_pair(target_school.id, cc_id, year_id)
-                year_non_numeric: tuple[int, str, str] | None = None
-                year_numeric: tuple[int, str, str] | None = None
-                for report in reports:
-                    report_label = str(report.get("label", "")).strip()
-                    if not self._major_matches(report_label, major_name):
-                        continue
-                    agreement_id = str(report.get("key", "")).strip()
-                    if not agreement_id:
-                        continue
-                    if agreement_id.isdigit():
-                        year_numeric = year_numeric or (year_id, report_label, agreement_id)
-                    else:
-                        year_non_numeric = year_non_numeric or (
-                            year_id,
-                            report_label,
-                            agreement_id,
-                        )
-
-                if year_numeric and not numeric_fallback:
-                    numeric_fallback = year_numeric
-
-                if not selected:
-                    if self.allow_non_numeric_keys and year_non_numeric:
-                        selected = year_non_numeric
-                    elif year_numeric:
-                        selected = year_numeric
-                    elif year_non_numeric:
-                        selected = year_non_numeric
-
-                if not self.allow_non_numeric_keys and numeric_fallback:
-                    selected = numeric_fallback
-                    break
-                if (
-                    self.allow_non_numeric_keys
-                    and selected
-                    and (selected[2].isdigit() or numeric_fallback)
-                ):
-                    break
+            selected = self._select_best_match_for_candidate(
+                target_school_id=target_school.id,
+                cc_id=cc_id,
+                candidate_years=candidate_years,
+                major_name=major_name,
+            )
             if not selected:
                 continue
-            if not self.allow_non_numeric_keys:
-                if not numeric_fallback:
-                    continue
-                selected = numeric_fallback
-                numeric_fallback = None
-            selected_year_id, _, agreement_id = selected
-            fallback: tuple[int, str, str] | None = None
-            if self.allow_non_numeric_keys and not agreement_id.isdigit():
-                fallback = numeric_fallback
-            refs.append(
-                AgreementRef(
-                    target_school_id=target_school.id,
-                    target_school_name=target_school.name,
-                    target_major=major_name,
-                    cc_id=cc_id,
-                    cc_name=cc_name,
-                    academic_year_id=selected_year_id,
-                    academic_year_label=year_labels.get(selected_year_id),
-                    agreement_id=agreement_id,
-                    artifact_url=f"{self.client.api_prefix}/artifacts/{agreement_id}",
-                    fallback_academic_year_id=fallback[0] if fallback else None,
-                    fallback_academic_year_label=(
-                        year_labels.get(fallback[0]) if fallback else None
-                    ),
-                    fallback_agreement_id=fallback[2] if fallback else None,
-                    fallback_artifact_url=(
-                        f"{self.client.api_prefix}/artifacts/{fallback[2]}"
-                        if fallback
-                        else None
-                    ),
-                )
+            selected_year_id, agreement_id, fallback = selected
+            ref = AgreementRef(
+                target_school_id=target_school.id,
+                target_school_name=target_school.name,
+                target_major=major_name,
+                cc_id=cc_id,
+                cc_name=cc_name,
+                academic_year_id=selected_year_id,
+                academic_year_label=year_labels.get(selected_year_id),
+                agreement_id=agreement_id,
+                artifact_url=f"{self.client.api_prefix}/artifacts/{agreement_id}",
+                fallback_academic_year_id=fallback[0] if fallback else None,
+                fallback_academic_year_label=(
+                    year_labels.get(fallback[0]) if fallback else None
+                ),
+                fallback_agreement_id=fallback[1] if fallback else None,
+                fallback_artifact_url=(
+                    f"{self.client.api_prefix}/artifacts/{fallback[1]}"
+                    if fallback
+                    else None
+                ),
             )
-            if max_community_colleges and len(refs) >= max_community_colleges:
-                break
+            previous = refs_by_cc.get(cc_id)
+            if previous is None:
+                refs_by_cc[cc_id] = ref
+                cc_order.append(cc_id)
+                continue
+            if self._is_better_ref(candidate=ref, incumbent=previous):
+                refs_by_cc[cc_id] = ref
+
+        refs = [refs_by_cc[cc_id] for cc_id in cc_order]
+        if max_community_colleges is not None:
+            refs = refs[:max_community_colleges]
         return refs
+
+    def _select_best_match_for_candidate(
+        self,
+        target_school_id: int,
+        cc_id: int,
+        candidate_years: list[int],
+        major_name: str,
+    ) -> tuple[int, str, tuple[int, str] | None] | None:
+        selected: tuple[int, str, str] | None = None
+        numeric_fallback: tuple[int, str, str] | None = None
+        for year_id in candidate_years:
+            reports = self._reports_for_pair(target_school_id, cc_id, year_id)
+            year_non_numeric: tuple[int, str, str] | None = None
+            year_numeric: tuple[int, str, str] | None = None
+            for report in reports:
+                report_label = str(report.get("label", "")).strip()
+                if not self._major_matches(report_label, major_name):
+                    continue
+                agreement_id = str(report.get("key", "")).strip()
+                if not agreement_id:
+                    continue
+                if agreement_id.isdigit():
+                    year_numeric = year_numeric or (year_id, report_label, agreement_id)
+                else:
+                    year_non_numeric = year_non_numeric or (
+                        year_id,
+                        report_label,
+                        agreement_id,
+                    )
+
+            if year_numeric and not numeric_fallback:
+                numeric_fallback = year_numeric
+
+            if not selected:
+                if self.allow_non_numeric_keys and year_non_numeric:
+                    selected = year_non_numeric
+                elif year_numeric:
+                    selected = year_numeric
+                elif year_non_numeric:
+                    selected = year_non_numeric
+
+            if not self.allow_non_numeric_keys and numeric_fallback:
+                selected = numeric_fallback
+                break
+            if (
+                self.allow_non_numeric_keys
+                and selected
+                and (selected[2].isdigit() or numeric_fallback)
+            ):
+                break
+
+        if not selected:
+            return None
+        if not self.allow_non_numeric_keys:
+            if not numeric_fallback:
+                return None
+            selected = numeric_fallback
+            numeric_fallback = None
+
+        selected_year_id, _, agreement_id = selected
+        fallback: tuple[int, str] | None = None
+        if self.allow_non_numeric_keys and not agreement_id.isdigit() and numeric_fallback:
+            fallback = (numeric_fallback[0], numeric_fallback[2])
+        return (selected_year_id, agreement_id, fallback)
+
+    def _is_better_ref(self, candidate: AgreementRef, incumbent: AgreementRef) -> bool:
+        if candidate.academic_year_id != incumbent.academic_year_id:
+            return candidate.academic_year_id > incumbent.academic_year_id
+        if self.allow_non_numeric_keys:
+            if not candidate.agreement_id.isdigit() and incumbent.agreement_id.isdigit():
+                return True
+            if candidate.agreement_id.isdigit() and not incumbent.agreement_id.isdigit():
+                return False
+        else:
+            if candidate.agreement_id.isdigit() and not incumbent.agreement_id.isdigit():
+                return True
+            if not candidate.agreement_id.isdigit() and incumbent.agreement_id.isdigit():
+                return False
+        return False
 
     @staticmethod
     def serialize_refs(refs: list[AgreementRef]) -> list[dict]:
