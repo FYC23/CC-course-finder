@@ -118,8 +118,10 @@ Current v1 scope:
 
 - Canonical term input is a human label like `"Summer 2026"` (strict `Spring|Summer|Fall YYYY`).
 - Initial support is one pilot source: Evergreen Valley College (`cc_id=2`).
-- Course matching is exact on ASSIST `course_code` in this first slice.
+- Evergreen pilot now queries Ellucian public schedule endpoints (`/Student/Courses/PostSearchCriteria`, with `/Sections` fallback) rather than static page scraping.
+- Course matching uses small deterministic keyword variants from ASSIST `course_code` (for example stripping leading zeros), so results are still heuristic.
 - Banner/PeopleSoft generalized families are deferred until more real CC adapters are validated.
+- Parsing correctness is best-effort and may drift if the live Ellucian payload shape changes.
 
 ## ASSIST integration incident notes
 
