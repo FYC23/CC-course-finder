@@ -104,3 +104,58 @@ def test_ingest_falls_back_to_numeric_key_on_404(
     )
     assert len(stored) == 1
     assert stored[0].agreement_id == "26089328"
+
+
+def test_ingest_emits_progress_logs(tmp_path: Path, monkeypatch) -> None:
+    ref = AgreementRef(
+        target_school_id=117,
+        target_school_name="University of California, Los Angeles",
+        target_major="Computer Science",
+        cc_id=2,
+        cc_name="Evergreen Valley College",
+        academic_year_id=76,
+        academic_year_label="2025-2026",
+        agreement_id="26089328",
+        artifact_url="/api/artifacts/26089328",
+    )
+    logs: list[str] = []
+
+    def _fake_extract(_: Path) -> str:
+        return "MATH 31B ← MATH 1B"
+
+    def _fake_parse(ref_used: AgreementRef, _: str) -> list[ArticulationRow]:
+        return [
+            ArticulationRow(
+                target_school=ref_used.target_school_name,
+                target_major=ref_used.target_major,
+                target_requirement="MATH 31B",
+                uc_equivalent="MATH 31B",
+                cc_name=ref_used.cc_name,
+                cc_id=ref_used.cc_id,
+                course_code="MATH 1B",
+                course_title="Calculus II",
+                agreement_id=ref_used.agreement_id,
+                academic_year=ref_used.academic_year_label or str(ref_used.academic_year_id),
+                source_url=ref_used.artifact_url,
+            )
+        ]
+
+    monkeypatch.setattr("src.assist.pipeline.extract_text_from_pdf", _fake_extract)
+    monkeypatch.setattr("src.assist.pipeline.parse_articulation_rows", _fake_parse)
+
+    fetcher = _FallbackFetcher(artifact_dir=tmp_path)
+    run = ingest_target_major(
+        discovery=_FakeDiscovery([ref]),
+        fetcher=fetcher,
+        db_path=tmp_path / "assist.sqlite3",
+        target_school=ref.target_school_name,
+        major_name=ref.target_major,
+        max_community_colleges=1,
+        log=logs.append,
+    )
+
+    assert run.rows_written == 1
+    assert any("Discovering agreements" in msg for msg in logs)
+    assert any("Processing Evergreen Valley College" in msg for msg in logs)
+    assert any("Parsed 1 articulation rows" in msg for msg in logs)
+    assert any("Ingest complete" in msg for msg in logs)
