@@ -555,8 +555,8 @@ def test_pilot_provider_keeps_match_stats_when_raw_summary_is_long() -> None:
     assert out.raw_summary == "[match_filter matched=1 unknown=0 dropped_nonmatch=0]"
 
 
-def test_pilot_provider_uses_sjcc_location_token() -> None:
-    source = get_college_source(136)
+def test_pilot_provider_uses_wvc_location_token() -> None:
+    source = get_college_source(80)
     session = _FakeSession(
         get_responses=[
             _FakeResponse(
@@ -588,8 +588,8 @@ def test_pilot_provider_uses_sjcc_location_token() -> None:
     )
 
     assert out.offered is True
-    assert session.calls[0][1]["locations"] == "SJCC"
-    assert "SJCC" in session.calls[1][1]["locations"]
+    assert session.calls[0][1]["locations"] == "WVC"
+    assert "WVC" in session.calls[1][1]["locations"]
 
 
 def test_pilot_provider_rejects_unsupported_source_system() -> None:

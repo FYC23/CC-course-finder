@@ -119,7 +119,7 @@ Current v1 scope:
 - Canonical term input is a human label like `"Summer 2026"` (strict `Spring|Summer|Fall YYYY`).
 - Initial support includes two pilot Banner/Ellucian sources:
   - Evergreen Valley College (`cc_id=2`, location token `EVC`)
-  - San Jose City College (`cc_id=136`, location token `SJCC`)
+  - West Valley College (`cc_id=80`, location token `WVC`)
 - The generalized Banner pilot queries Ellucian public schedule endpoints (`/Student/Courses/PostSearchCriteria`, with `/Sections` fallback) rather than static page scraping.
 - Course matching uses small deterministic keyword variants from ASSIST `course_code` (for example stripping leading zeros), so results are still heuristic.
 - Banner/PeopleSoft generalized families are deferred until more real CC adapters are validated.

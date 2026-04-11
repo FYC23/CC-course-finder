@@ -10,12 +10,12 @@ _SOURCES_BY_CC_ID: dict[int, CollegeScheduleSource] = {
         base_url="https://colss-prod.ec.sjeccd.edu/Student/Courses/SearchResult",
         locations=("EVC",),
     ),
-    136: CollegeScheduleSource(
-        cc_id=136,
-        cc_name="San Jose City College",
+    80: CollegeScheduleSource(
+        cc_id=80,
+        cc_name="West Valley College",
         system="banner",
-        base_url="https://colss-prod.ec.sjeccd.edu/Student/Courses/SearchResult",
-        locations=("SJCC",),
+        base_url="https://colss-prod.ncscsaas.elluciancloud.com/Student/Courses/SearchResult",
+        locations=("WVC",),
     ),
 }
 

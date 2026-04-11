@@ -99,8 +99,8 @@ def _seed_assist_rows(db_path: Path) -> None:
                 target_major=run.target_major,
                 target_requirement="MATH 31A",
                 uc_equivalent="MATH 31A",
-                cc_name="San Jose City College",
-                cc_id=136,
+                cc_name="West Valley College",
+                cc_id=80,
                 course_code="MATH 1A",
                 course_title="Calculus I",
                 agreement_id="125",
@@ -117,9 +117,9 @@ def test_catalog_lookup() -> None:
     assert source.system == "banner"
     assert source.locations == ("EVC",)
 
-    sjcc = get_college_source(136)
-    assert sjcc.cc_name == "San Jose City College"
-    assert sjcc.locations == ("SJCC",)
+    wvc = get_college_source(80)
+    assert wvc.cc_name == "West Valley College"
+    assert wvc.locations == ("WVC",)
 
     with pytest.raises(KeyError):
         get_college_source(9999)
@@ -143,7 +143,7 @@ def test_schedule_service_queries_distinct_assist_courses(tmp_path: Path) -> Non
     assert {item.course_code for item in out} == {"MATH 1A", "MATH 1B"}
     assert provider.calls == [
         ("Summer 2026", 2, "MATH 1B"),
-        ("Summer 2026", 136, "MATH 1A"),
+        ("Summer 2026", 80, "MATH 1A"),
     ]
 
 
