@@ -69,10 +69,12 @@ class WvmStaticProvider:
                           sections=[], source_url=crns_url, raw_summary="parse error")
 
         subj, crse = parsed
+        locations = set(source.locations)
         matching = [
             r for r in all_rows
             if r.get("SUBJ_CODE", "").upper() == subj
             and _normalize_crse(str(r.get("CRSE_NUMB", ""))) == crse
+            and (not locations or r.get("SSBSECT_CAMP_CODE", "") in locations)
         ]
 
         if not matching:

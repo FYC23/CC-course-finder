@@ -47,24 +47,27 @@ def query(
     term: str = typer.Option(..., help='Canonical term label like "Summer 2026".'),
     requirement: str = typer.Option("", help="Optional requirement text filter."),
     cc_id: int = typer.Option(
-        2,
+        0,
         help=(
-            "Community college id for configured schedule sources; "
-            "default is Evergreen Valley College (2)."
+            "Community college id for configured schedule sources. "
+            "Pass 0 (default) to query all configured CCs."
         ),
     ),
 ) -> None:
     """Query schedule offerings for ASSIST course matches."""
     provider = _CompositeProvider([BannerEllucianProvider(), WvmStaticProvider()])
-    try:
-        source = get_college_source(cc_id)
-    except KeyError as err:
-        raise typer.BadParameter(str(err), param_hint="--cc-id") from err
-    if not provider.supports_source(source):
-        raise typer.BadParameter(
-            f"No provider configured for source system={source.system!r} (cc_id={source.cc_id})",
-            param_hint="--cc-id",
-        )
+    resolved_cc_id: int | None = cc_id if cc_id != 0 else None
+
+    if resolved_cc_id is not None:
+        try:
+            source = get_college_source(resolved_cc_id)
+        except KeyError as err:
+            raise typer.BadParameter(str(err), param_hint="--cc-id") from err
+        if not provider.supports_source(source):
+            raise typer.BadParameter(
+                f"No provider configured for source system={source.system!r} (cc_id={source.cc_id})",
+                param_hint="--cc-id",
+            )
 
     service = ScheduleService(db_path=DB_PATH, provider=provider)
     try:
@@ -73,7 +76,7 @@ def query(
             target_major=target_major,
             term_label=term,
             requirement_filter=requirement or None,
-            cc_id=cc_id,
+            cc_id=resolved_cc_id,
         )
     except ValueError as err:
         typer.echo(f"Invalid input: {err}", err=True)

@@ -116,3 +116,25 @@ def test_cli_rejects_unsupported_source_system(monkeypatch) -> None:
     result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-id", "2"])
     assert result.exit_code == 2
     assert "No provider configured for source system='banner'" in result.output
+
+
+def test_cli_all_ccs_passes_none_cc_id(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_row(db_path)
+    monkeypatch.setattr(schedule_cli, "DB_PATH", db_path)
+
+    received_cc_ids: list[int | None] = []
+
+    class _SpyService:
+        def __init__(self, db_path, provider) -> None:
+            pass
+
+        def query(self, *, cc_id, **kwargs):
+            received_cc_ids.append(cc_id)
+            return []
+
+    monkeypatch.setattr(schedule_cli, "ScheduleService", _SpyService)
+    result = _RUNNER.invoke(schedule_cli.app, _BASE_ARGS)  # default cc_id=0
+
+    assert result.exit_code == 0
+    assert received_cc_ids == [None]

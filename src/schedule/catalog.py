@@ -16,7 +16,7 @@ _SOURCES_BY_CC_ID: dict[int, CollegeScheduleSource] = {
         system="wvm_static",
         base_url="https://schedule.wvm.edu",
         # Shared WVM/Mission dataset: filter sections to this campus (`crns.json`).
-        locations=("WV",),
+        locations=("WVC",),
     ),
 }
 

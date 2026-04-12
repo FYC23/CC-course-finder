@@ -119,7 +119,7 @@ def test_catalog_lookup() -> None:
 
     wvc = get_college_source(80)
     assert wvc.cc_name == "West Valley College"
-    assert wvc.locations == ("WV",)
+    assert wvc.locations == ("WVC",)
 
     with pytest.raises(KeyError):
         get_college_source(9999)
