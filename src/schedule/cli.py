@@ -9,7 +9,7 @@ import typer
 from src.assist.config import DB_PATH
 
 from .banner_ellucian import BannerEllucianProvider
-from .catalog import get_college_source
+from .catalog import find_college_source_by_name, get_college_source
 from .models import CollegeScheduleSource, CourseAvailability
 from .providers import ScheduleProvider
 from .service import ScheduleService
@@ -53,10 +53,27 @@ def query(
             "Pass 0 (default) to query all configured CCs."
         ),
     ),
+    cc_name: str = typer.Option(
+        "",
+        help="Community college name (case-insensitive substring). Alternative to --cc-id.",
+    ),
 ) -> None:
     """Query schedule offerings for ASSIST course matches."""
+    if cc_id != 0 and cc_name:
+        typer.echo("Error: --cc-id and --cc-name are mutually exclusive.", err=True)
+        raise typer.Exit(code=2)
+
     provider = _CompositeProvider([BannerEllucianProvider(), WvmStaticProvider()])
-    resolved_cc_id: int | None = cc_id if cc_id != 0 else None
+    resolved_cc_id: int | None = None
+
+    if cc_name:
+        try:
+            source = find_college_source_by_name(cc_name)
+        except KeyError as err:
+            raise typer.BadParameter(str(err), param_hint="--cc-name") from err
+        resolved_cc_id = source.cc_id
+    elif cc_id != 0:
+        resolved_cc_id = cc_id
 
     if resolved_cc_id is not None:
         try:

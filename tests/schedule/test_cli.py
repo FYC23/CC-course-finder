@@ -138,3 +138,37 @@ def test_cli_all_ccs_passes_none_cc_id(monkeypatch, tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert received_cc_ids == [None]
+
+
+def test_cli_cc_name_resolves_to_cc_id(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_row(db_path)
+    monkeypatch.setattr(schedule_cli, "DB_PATH", db_path)
+
+    received_cc_ids: list[int | None] = []
+
+    class _SpyService:
+        def __init__(self, db_path, provider) -> None:
+            pass
+
+        def query(self, *, cc_id, **kwargs):
+            received_cc_ids.append(cc_id)
+            return []
+
+    monkeypatch.setattr(schedule_cli, "ScheduleService", _SpyService)
+    result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-name", "evergreen"])
+
+    assert result.exit_code == 0
+    assert received_cc_ids == [2]
+
+
+def test_cli_cc_name_no_match_exits_2() -> None:
+    result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-name", "nonexistent college"])
+    assert result.exit_code == 2
+    assert "No schedule source matches" in result.output
+
+
+def test_cli_cc_name_and_cc_id_mutually_exclusive() -> None:
+    result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-name", "evergreen", "--cc-id", "2"])
+    assert result.exit_code == 2
+    assert "mutually exclusive" in result.output

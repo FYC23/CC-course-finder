@@ -114,11 +114,22 @@ uv run python -m src.schedule.cli query \
   --requirement "MATH 31B"
 ```
 
+**College selection:** Default `--cc-id` is `0` (omit the flag): query **all** catalog-backed community colleges that appear in the articulation result. Use a nonzero `--cc-id` to pin one college. **`--cc-name`** accepts a **case-insensitive substring** of a catalog college name and must match **exactly one** entry (otherwise the CLI errors). **`--cc-name`** cannot be used together with a nonzero **`--cc-id`**.
+
+```bash
+uv run python -m src.schedule.cli query \
+  --target-school "University of California, Los Angeles" \
+  --target-major "Computer Science" \
+  --term "Summer 2026" \
+  --cc-name "West Valley" \
+  --requirement "MATH 31B"
+```
+
 Current v1 scope:
 
 - Canonical term input is a human label like `"Summer 2026"` (strict `Spring|Summer|Fall YYYY`).
 - **Evergreen Valley College (`cc_id=2`):** Banner/Ellucian COLSS — `PostSearchCriteria` / `Sections`, keyword variants on ASSIST `course_code`, bounded fan-out and memoized lookups. Raw snippets only when `SCHEDULE_DEBUG_RAW_SUMMARY=1`; match-filter counts stay in output. Ellucian JSON shape may drift.
-- **West Valley College (`cc_id=80`):** `wvm_static` — `schedule.wvm.edu` JSON (`data/{termCode}/crns.json` plus `section-instructors.json`), not COLSS. Term codes look like `202650` for Summer 2026; `locations` is campus `WV` to filter the shared WVM/Mission export.
+- **West Valley College (`cc_id=80`):** `wvm_static` — `schedule.wvm.edu` JSON (`data/{termCode}/crns.json` plus `section-instructors.json`), not COLSS. Term codes look like `202650` for Summer 2026; `locations` filters `SSBSECT_CAMP_CODE` in the shared WVM/Mission export (e.g. `WVC`).
 - Broader Banner/PeopleSoft coverage is deferred until more adapters are validated.
 - Schedule request failures are fail-soft per course (`offered=false`, error marker in `raw_summary`).
 
