@@ -10,7 +10,27 @@ from src.assist.config import DB_PATH
 
 from .banner_ellucian import BannerEllucianProvider
 from .catalog import get_college_source
+from .models import CollegeScheduleSource, CourseAvailability
+from .providers import ScheduleProvider
 from .service import ScheduleService
+from .term import ParsedTerm
+from .wvm_static import WvmStaticProvider
+
+
+class _CompositeProvider:
+    def __init__(self, providers: list[ScheduleProvider]) -> None:
+        self._providers = providers
+
+    def supports_source(self, source: CollegeScheduleSource) -> bool:
+        return any(p.supports_source(source) for p in self._providers)
+
+    def search_course(
+        self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str
+    ) -> CourseAvailability:
+        for p in self._providers:
+            if p.supports_source(source):
+                return p.search_course(source=source, term=term, course_code=course_code)
+        raise ValueError(f"No provider for system={source.system!r}")
 
 app = typer.Typer(help="Schedule layer query CLI.")
 
@@ -35,7 +55,7 @@ def query(
     ),
 ) -> None:
     """Query schedule offerings for ASSIST course matches."""
-    provider = BannerEllucianProvider()
+    provider = _CompositeProvider([BannerEllucianProvider(), WvmStaticProvider()])
     try:
         source = get_college_source(cc_id)
     except KeyError as err:

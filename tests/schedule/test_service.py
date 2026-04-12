@@ -18,7 +18,7 @@ class _FakeProvider(ScheduleProvider):
         self.calls: list[tuple[str, int, str]] = []
 
     def supports_source(self, source) -> bool:
-        return source.system == "banner"
+        return source.system in ("banner", "wvm_static")
 
     def search_course(
         self, *, source, term, course_code: str
@@ -119,7 +119,7 @@ def test_catalog_lookup() -> None:
 
     wvc = get_college_source(80)
     assert wvc.cc_name == "West Valley College"
-    assert wvc.locations == ("WVC",)
+    assert wvc.locations == ("WV",)
 
     with pytest.raises(KeyError):
         get_college_source(9999)

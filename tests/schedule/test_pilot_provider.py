@@ -556,7 +556,13 @@ def test_pilot_provider_keeps_match_stats_when_raw_summary_is_long() -> None:
 
 
 def test_pilot_provider_uses_wvc_location_token() -> None:
-    source = get_college_source(80)
+    source = CollegeScheduleSource(
+        cc_id=80,
+        cc_name="West Valley College",
+        system="banner",
+        base_url="https://colss-prod.ncscsaas.elluciancloud.com/Student/Courses/SearchResult",
+        locations=("WVC",),
+    )
     session = _FakeSession(
         get_responses=[
             _FakeResponse(

@@ -13,9 +13,10 @@ _SOURCES_BY_CC_ID: dict[int, CollegeScheduleSource] = {
     80: CollegeScheduleSource(
         cc_id=80,
         cc_name="West Valley College",
-        system="banner",
-        base_url="https://colss-prod.ncscsaas.elluciancloud.com/Student/Courses/SearchResult",
-        locations=("WVC",),
+        system="wvm_static",
+        base_url="https://schedule.wvm.edu",
+        # Shared WVM/Mission dataset: filter sections to this campus (`crns.json`).
+        locations=("WV",),
     ),
 }
 
