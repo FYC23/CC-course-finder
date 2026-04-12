@@ -128,10 +128,21 @@ uv run python -m src.schedule.cli query \
 Current v1 scope:
 
 - Canonical term input is a human label like `"Summer 2026"` (strict `Spring|Summer|Fall YYYY`).
-- **Evergreen Valley College (`cc_id=2`):** Banner/Ellucian COLSS — `PostSearchCriteria` / `Sections`, keyword variants on ASSIST `course_code`, bounded fan-out and memoized lookups. Raw snippets only when `SCHEDULE_DEBUG_RAW_SUMMARY=1`; match-filter counts stay in output. Ellucian JSON shape may drift.
-- **West Valley College (`cc_id=80`):** `wvm_static` — `schedule.wvm.edu` JSON (`data/{termCode}/crns.json` plus `section-instructors.json`), not COLSS. Term codes look like `202650` for Summer 2026; `locations` filters `SSBSECT_CAMP_CODE` in the shared WVM/Mission export (e.g. `WVC`).
-- Broader Banner/PeopleSoft coverage is deferred until more adapters are validated.
 - Schedule request failures are fail-soft per course (`offered=false`, error marker in `raw_summary`).
+
+**Supported colleges and adapters:**
+
+| College | `cc_id` | Adapter |
+|---|---|---|
+| Evergreen Valley College | 2 | `banner` — Ellucian COLSS (`PostSearchCriteria` / `Sections`) |
+| West Valley College | 80 | `wvm_static` — `schedule.wvm.edu` static JSON |
+| Diablo Valley College | 114 | `banner` — 4CD Ellucian COLSS |
+| Los Medanos College | 61 | `banner` — 4CD Ellucian COLSS |
+| Contra Costa College | 28 | `banner` — 4CD Ellucian COLSS |
+| Mount San Antonio College | 62 | `banner_ssb_classic` — old SSB REST API |
+| City College of San Francisco | 33 | `banner_ssb_classic` — old SSB REST API (port 8105) |
+
+`banner_ssb_classic` resolves term codes dynamically via `getTerms` (each institution uses a different numeric suffix scheme). Raw snippets only when `SCHEDULE_DEBUG_RAW_SUMMARY=1`.
 
 ## ASSIST integration incident notes
 
