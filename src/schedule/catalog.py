@@ -6,7 +6,7 @@ from pathlib import Path
 from .models import CollegeScheduleSource
 
 _DATA_FILE = Path(__file__).parent / "data" / "colleges.json"
-_KNOWN_SYSTEMS = {"banner", "wvm_static", "banner_ssb_classic"}
+_KNOWN_SYSTEMS = {"banner", "wvm_static", "banner_ssb_classic", "vsb_4cd"}
 
 
 def _validate_entry(e: dict) -> None:

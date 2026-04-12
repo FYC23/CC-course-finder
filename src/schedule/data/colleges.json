@@ -18,24 +18,24 @@
   {
     "cc_id": 114,
     "cc_name": "Diablo Valley College",
-    "system": "banner",
-    "base_url": "https://selfservice.4cd.edu/Student/Courses/SearchResult",
+    "system": "vsb_4cd",
+    "base_url": "https://vsb.4cd.edu",
     "locations": ["DVC"],
     "source_url": "https://www.dvc.edu/enrollment/schedule-of-classes.html"
   },
   {
     "cc_id": 61,
     "cc_name": "Los Medanos College",
-    "system": "banner",
-    "base_url": "https://selfservice.4cd.edu/Student/Courses/SearchResult",
+    "system": "vsb_4cd",
+    "base_url": "https://vsb.4cd.edu",
     "locations": ["LMC"],
     "source_url": "https://www.losmedanos.edu/enrollment/schedule.aspx"
   },
   {
     "cc_id": 28,
     "cc_name": "Contra Costa College",
-    "system": "banner",
-    "base_url": "https://selfservice.4cd.edu/Student/Courses/SearchResult",
+    "system": "vsb_4cd",
+    "base_url": "https://vsb.4cd.edu",
     "locations": ["CCC"],
     "source_url": "https://www.contracosta.edu/class-schedule/"
   },

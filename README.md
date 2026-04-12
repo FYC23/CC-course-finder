@@ -136,13 +136,15 @@ Current v1 scope:
 |---|---|---|
 | Evergreen Valley College | 2 | `banner` — Ellucian COLSS (`PostSearchCriteria` / `Sections`) |
 | West Valley College | 80 | `wvm_static` — `schedule.wvm.edu` static JSON |
-| Diablo Valley College | 114 | `banner` — 4CD Ellucian COLSS |
-| Los Medanos College | 61 | `banner` — 4CD Ellucian COLSS |
-| Contra Costa College | 28 | `banner` — 4CD Ellucian COLSS |
+| Diablo Valley College | 114 | `vsb_4cd` — VSB `api/class-data` XML |
+| Los Medanos College | 61 | `vsb_4cd` — VSB `api/class-data` XML |
+| Contra Costa College | 28 | `vsb_4cd` — VSB `api/class-data` XML |
 | Mount San Antonio College | 62 | `banner_ssb_classic` — old SSB REST API |
 | City College of San Francisco | 33 | `banner_ssb_classic` — old SSB REST API (port 8105) |
 
 `banner_ssb_classic` resolves term codes dynamically via `getTerms` (each institution uses a different numeric suffix scheme). Raw snippets only when `SCHEDULE_DEBUG_RAW_SUMMARY=1`.
+
+`vsb_4cd` uses the Visual Schedule Builder (`vsb.4cd.edu`) shared by Diablo Valley, Los Medanos, and Contra Costa colleges. Term codes are derived deterministically (`YYYY` + `10`/`20`/`30` for Summer/Fall/Spring). Campus filtering is applied per-block using the `locations` field.
 
 ## ASSIST integration incident notes
 

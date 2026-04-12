@@ -15,6 +15,7 @@ from .models import CollegeScheduleSource, CourseAvailability
 from .providers import ScheduleProvider
 from .service import ScheduleService
 from .term import ParsedTerm
+from .vsb_4cd import Vsb4cdProvider
 from .wvm_static import WvmStaticProvider
 
 
@@ -64,7 +65,7 @@ def query(
         typer.echo("Error: --cc-id and --cc-name are mutually exclusive.", err=True)
         raise typer.Exit(code=2)
 
-    provider = _CompositeProvider([BannerEllucianProvider(), BannerSsbClassicProvider(), WvmStaticProvider()])
+    provider = _CompositeProvider([BannerEllucianProvider(), BannerSsbClassicProvider(), WvmStaticProvider(), Vsb4cdProvider()])
     resolved_cc_id: int | None = None
 
     if cc_name:
