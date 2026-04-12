@@ -555,7 +555,8 @@ def test_pilot_provider_keeps_match_stats_when_raw_summary_is_long() -> None:
     assert out.raw_summary == "[match_filter matched=1 unknown=0 dropped_nonmatch=0]"
 
 
-def test_pilot_provider_uses_wvc_location_token() -> None:
+def test_banner_provider_passes_location_token_to_requests() -> None:
+    """Banner-only: synthetic COLSS source with a location token (not production WVC catalog)."""
     source = CollegeScheduleSource(
         cc_id=80,
         cc_name="West Valley College",

@@ -117,16 +117,10 @@ uv run python -m src.schedule.cli query \
 Current v1 scope:
 
 - Canonical term input is a human label like `"Summer 2026"` (strict `Spring|Summer|Fall YYYY`).
-- Initial support includes two pilot Banner/Ellucian sources:
-  - Evergreen Valley College (`cc_id=2`, location token `EVC`)
-  - West Valley College (`cc_id=80`, location token `WVC`)
-- The generalized Banner pilot queries Ellucian public schedule endpoints (`/Student/Courses/PostSearchCriteria`, with `/Sections` fallback) rather than static page scraping.
-- Course matching uses small deterministic keyword variants from ASSIST `course_code` (for example stripping leading zeros), so results are still heuristic.
-- Banner/PeopleSoft generalized families are deferred until more real CC adapters are validated.
-- Parsing correctness is best-effort and may drift if the live Ellucian payload shape changes.
-- Request fan-out is now bounded (keyword/page/catalog-section caps), and repeated course lookups in one query run are memoized.
-- Raw response snippets are only included when `SCHEDULE_DEBUG_RAW_SUMMARY=1`; match-filter stats always remain in output.
-- Schedule request failures are fail-soft per course: failed lookups return `offered=false` with `raw_summary` error marker instead of aborting the whole query.
+- **Evergreen Valley College (`cc_id=2`):** Banner/Ellucian COLSS — `PostSearchCriteria` / `Sections`, keyword variants on ASSIST `course_code`, bounded fan-out and memoized lookups. Raw snippets only when `SCHEDULE_DEBUG_RAW_SUMMARY=1`; match-filter counts stay in output. Ellucian JSON shape may drift.
+- **West Valley College (`cc_id=80`):** `wvm_static` — `schedule.wvm.edu` JSON (`data/{termCode}/crns.json` plus `section-instructors.json`), not COLSS. Term codes look like `202650` for Summer 2026; `locations` is campus `WV` to filter the shared WVM/Mission export.
+- Broader Banner/PeopleSoft coverage is deferred until more adapters are validated.
+- Schedule request failures are fail-soft per course (`offered=false`, error marker in `raw_summary`).
 
 ## ASSIST integration incident notes
 
