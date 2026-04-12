@@ -9,6 +9,7 @@ import typer
 from src.assist.config import DB_PATH
 
 from .banner_ellucian import BannerEllucianProvider
+from .banner_ssb_classic import BannerSsbClassicProvider
 from .catalog import find_college_source_by_name, get_college_source
 from .models import CollegeScheduleSource, CourseAvailability
 from .providers import ScheduleProvider
@@ -63,7 +64,7 @@ def query(
         typer.echo("Error: --cc-id and --cc-name are mutually exclusive.", err=True)
         raise typer.Exit(code=2)
 
-    provider = _CompositeProvider([BannerEllucianProvider(), WvmStaticProvider()])
+    provider = _CompositeProvider([BannerEllucianProvider(), BannerSsbClassicProvider(), WvmStaticProvider()])
     resolved_cc_id: int | None = None
 
     if cc_name:
