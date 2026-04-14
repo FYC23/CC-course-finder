@@ -163,7 +163,14 @@ def test_validate_all_entries(entry: dict):
 def test_get_college_source_all_entries(entry: dict):
     src = get_college_source(entry["cc_id"])
     assert src.cc_id == entry["cc_id"]
-    assert src.system in ("banner", "wvm_static", "banner_ssb_classic", "vsb_4cd")
+    assert src.system in (
+        "banner",
+        "wvm_static",
+        "banner_ssb_classic",
+        "vsb_4cd",
+        "marin_colleague",
+        "smcccd_colleague",
+    )
     assert len(src.locations) > 0
 
 

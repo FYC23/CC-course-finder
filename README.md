@@ -83,6 +83,23 @@ uv sync
 uv run pytest
 ```
 
+### Run the web UI (prototype)
+
+This repo includes a small FastAPI-backed web UI under `src/web` that joins ASSIST articulation rows with schedule availability for a given term.
+
+```bash
+uv run uvicorn src.web.app:app --reload
+```
+
+Open `http://127.0.0.1:8000` and search by university, major, term, and optional requirement filter.
+
+Results UX notes:
+
+- Grouped by UC requirement.
+- Sorted within each group by availability: Offered → Not offered → Articulation only.
+- Availability filter lets you show only one status.
+  - "Articulation only" means the course is articulated in ASSIST, but this term's schedule availability wasn't found for that CC/course.
+
 ### Ingest and query (single-target v1)
 
 ```bash
@@ -114,7 +131,7 @@ uv run python -m src.schedule.cli query \
   --requirement "MATH 31B"
 ```
 
-**College selection:** Default `--cc-id` is `0` (omit the flag): query **all** catalog-backed community colleges that appear in the articulation result. Use a nonzero `--cc-id` to pin one college. **`--cc-name`** accepts a **case-insensitive substring** of a catalog college name and must match **exactly one** entry (otherwise the CLI errors). **`--cc-name`** cannot be used together with a nonzero **`--cc-id`**.
+**College selection:** Default `--cc-id` is `0` (omit the flag): query **all** catalog-backed community colleges that appear in the articulation result. Use a nonzero `--cc-id` to pin one college. `**--cc-name`** accepts a **case-insensitive substring** of a catalog college name and must match **exactly one** entry (otherwise the CLI errors). `**--cc-name`** cannot be used together with a nonzero `**--cc-id`**.
 
 ```bash
 uv run python -m src.schedule.cli query \
@@ -130,21 +147,28 @@ Current v1 scope:
 - Canonical term input is a human label like `"Summer 2026"` (strict `Spring|Summer|Fall YYYY`).
 - Schedule request failures are fail-soft per course (`offered=false`, error marker in `raw_summary`).
 
-**Supported colleges and adapters:**
+**Supported colleges and adapters (current):**
 
-| College | `cc_id` | Adapter |
-|---|---|---|
-| Evergreen Valley College | 2 | `banner` — Ellucian COLSS (`PostSearchCriteria` / `Sections`) |
-| West Valley College | 80 | `wvm_static` — `schedule.wvm.edu` static JSON |
-| Diablo Valley College | 114 | `vsb_4cd` — VSB `api/class-data` XML |
-| Los Medanos College | 61 | `vsb_4cd` — VSB `api/class-data` XML |
-| Contra Costa College | 28 | `vsb_4cd` — VSB `api/class-data` XML |
-| Mount San Antonio College | 62 | `banner_ssb_classic` — old SSB REST API |
-| City College of San Francisco | 33 | `banner_ssb_classic` — old SSB REST API (port 8105) |
+
+| College                       | `cc_id` | Adapter                                                       | Status      |
+| ----------------------------- | ------- | ------------------------------------------------------------- | ----------- |
+| Evergreen Valley College      | 2       | `banner` — Ellucian COLSS (`PostSearchCriteria` / `Sections`) | works       |
+| West Valley College           | 80      | `wvm_static` — `schedule.wvm.edu` static JSON                 | works       |
+| Diablo Valley College         | 114     | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
+| Los Medanos College           | 61      | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
+| Contra Costa College          | 28      | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
+| Mount San Antonio College     | 62      | `banner_ssb_classic` — old SSB REST API                       | works       |
+| City College of San Francisco | 33      | `banner_ssb_classic` — old SSB REST API (port 8105)           | works       |
+| Los Angeles City College      | 3       | `banner` — (LACCD schedule likely not Banner)                 | broken      |
+| College of Marin              | 4       | `marin_colleague` — public ASP.NET schedule grid              | works       |
+| College of San Mateo          | 5       | `smcccd_colleague` — SMCCD schedule API (`/courses`)          | needs creds |
+
 
 `banner_ssb_classic` resolves term codes dynamically via `getTerms` (each institution uses a different numeric suffix scheme). Raw snippets only when `SCHEDULE_DEBUG_RAW_SUMMARY=1`.
 
 `vsb_4cd` uses the Visual Schedule Builder (`vsb.4cd.edu`) shared by Diablo Valley, Los Medanos, and Contra Costa colleges. Term codes are derived deterministically (`YYYY` + `10`/`20`/`30` for Summer/Fall/Spring). Campus filtering is applied per-block using the `locations` field.
+
+`smcccd_colleague` uses the documented SMCCD API surface. The public docs expose `/courses`, but live responses require Basic Auth credentials; configure `SMCCD_API_USERNAME` and `SMCCD_API_PASSWORD` to enable live schedule pulls.
 
 ## ASSIST integration incident notes
 
@@ -155,20 +179,18 @@ During initial v1 implementation, ingest failed on the first API call with:
 ### Root issues discovered
 
 1. **Session/XSRF handshake requirement**
-   - ASSIST API calls required a browser-style session bootstrap first.
-   - Calling `/api/*` directly without the initial homepage request and anti-forgery header returned HTTP 400.
-
+  - ASSIST API calls required a browser-style session bootstrap first.
+  - Calling `/api/`* directly without the initial homepage request and anti-forgery header returned HTTP 400.
 2. **Major label matching was too strict/naive**
-   - Input like `"Computer Science"` did not always match ASSIST labels like `"Computer Science/B.S."`.
-   - A broader substring attempt matched incorrect majors (for example `"Computer Science and Engineering/B.S."`).
-
+  - Input like `"Computer Science"` did not always match ASSIST labels like `"Computer Science/B.S."`.
+  - A broader substring attempt matched incorrect majors (for example `"Computer Science and Engineering/B.S."`).
 3. **Agreement key assumptions were wrong**
-   - Some matching report keys were path-like strings, not numeric IDs.
-   - Casting report keys to `int` caused failures.
+  - Some matching report keys were path-like strings, not numeric IDs.
+  - Casting report keys to `int` caused failures.
 
 ### What was tried (including failed attempts)
 
-- Tried direct `/api/*` calls with basic headers only (`User-Agent`, `Accept`, `Referer`) -> **still 400**.
+- Tried direct `/api/`* calls with basic headers only (`User-Agent`, `Accept`, `Referer`) -> **still 400**.
 - Tried homepage bootstrap without forwarding the correct XSRF header -> **still 400**.
 - Tried broad major substring matching to capture `/B.S.` suffixes -> **introduced false positives**.
 
@@ -187,3 +209,4 @@ During initial v1 implementation, ingest failed on the first API call with:
 - Ingest no longer fails with HTTP 400 on startup.
 - Discovery resolves valid agreements for the requested major.
 - Ingest writes nonzero rows in normal runs (for example, `rows_written=14` with `--max-cc 2`).
+

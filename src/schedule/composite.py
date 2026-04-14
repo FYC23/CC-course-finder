@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from .banner_ellucian import BannerEllucianProvider
 from .banner_ssb_classic import BannerSsbClassicProvider
+from .marin_colleague import MarinColleagueProvider
 from .models import CollegeScheduleSource, CourseAvailability
 from .providers import ScheduleProvider
+from .smcccd_colleague import SmcccdColleagueProvider
 from .term import ParsedTerm
 from .vsb_4cd import Vsb4cdProvider
 from .wvm_static import WvmStaticProvider
@@ -31,4 +33,6 @@ def build_composite_provider() -> CompositeProvider:
         BannerSsbClassicProvider(),
         WvmStaticProvider(),
         Vsb4cdProvider(),
+        MarinColleagueProvider(),
+        SmcccdColleagueProvider(),
     ])
