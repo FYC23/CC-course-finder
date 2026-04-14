@@ -2,17 +2,21 @@
 
 One query: **which community college courses transfer** (via ASSIST) **and are offered this term** (via live schedule lookups).
 
+## Web UI
+
+![CC Course Finder search UI: filters for university, major, term, and availability; results grouped by UC requirement with CC courses and offered status](docs/images/web-ui.png)
+
 **Current status (v0.1):** tuned for UCLA CS; ASSIST ingest fairly complete, schedule coverage pilot (~8 community colleges).
 
 ## Quick start
 
-Prereqs: Python 3.12 + `[uv](https://github.com/astral-sh/uv)`
+Prereqs: Python 3.12 + uv
 
 Clone repo, then install deps.
 
 ```bash
-git clone <repo-url>
-cd <repo-dir>
+git clone https://github.com/FYC23/CC-course-finder
+cd https://github.com/FYC23/CC-course-finder
 ```
 
 ```bash
