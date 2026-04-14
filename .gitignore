@@ -30,6 +30,9 @@ Thumbs.db
 .cursor/debug*.log
 .idea/
 
+# Claude
+.claude/
+
 # Project: generated data & scraped artifacts (rebuild via pipeline)
 data/assist.sqlite3
 data/assist_artifacts/

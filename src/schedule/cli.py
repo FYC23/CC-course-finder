@@ -8,29 +8,9 @@ import typer
 
 from src.assist.config import DB_PATH
 
-from .banner_ellucian import BannerEllucianProvider
-from .catalog import get_college_source
-from .models import CollegeScheduleSource, CourseAvailability
-from .providers import ScheduleProvider
+from .catalog import find_college_source_by_name, get_college_source
+from .composite import build_composite_provider
 from .service import ScheduleService
-from .term import ParsedTerm
-from .wvm_static import WvmStaticProvider
-
-
-class _CompositeProvider:
-    def __init__(self, providers: list[ScheduleProvider]) -> None:
-        self._providers = providers
-
-    def supports_source(self, source: CollegeScheduleSource) -> bool:
-        return any(p.supports_source(source) for p in self._providers)
-
-    def search_course(
-        self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str
-    ) -> CourseAvailability:
-        for p in self._providers:
-            if p.supports_source(source):
-                return p.search_course(source=source, term=term, course_code=course_code)
-        raise ValueError(f"No provider for system={source.system!r}")
 
 app = typer.Typer(help="Schedule layer query CLI.")
 
@@ -47,24 +27,44 @@ def query(
     term: str = typer.Option(..., help='Canonical term label like "Summer 2026".'),
     requirement: str = typer.Option("", help="Optional requirement text filter."),
     cc_id: int = typer.Option(
-        2,
+        0,
         help=(
-            "Community college id for configured schedule sources; "
-            "default is Evergreen Valley College (2)."
+            "Community college id for configured schedule sources. "
+            "Pass 0 (default) to query all configured CCs."
         ),
+    ),
+    cc_name: str = typer.Option(
+        "",
+        help="Community college name (case-insensitive substring). Alternative to --cc-id.",
     ),
 ) -> None:
     """Query schedule offerings for ASSIST course matches."""
-    provider = _CompositeProvider([BannerEllucianProvider(), WvmStaticProvider()])
-    try:
-        source = get_college_source(cc_id)
-    except KeyError as err:
-        raise typer.BadParameter(str(err), param_hint="--cc-id") from err
-    if not provider.supports_source(source):
-        raise typer.BadParameter(
-            f"No provider configured for source system={source.system!r} (cc_id={source.cc_id})",
-            param_hint="--cc-id",
-        )
+    if cc_id != 0 and cc_name:
+        typer.echo("Error: --cc-id and --cc-name are mutually exclusive.", err=True)
+        raise typer.Exit(code=2)
+
+    provider = build_composite_provider()
+    resolved_cc_id: int | None = None
+
+    if cc_name:
+        try:
+            source = find_college_source_by_name(cc_name)
+        except KeyError as err:
+            raise typer.BadParameter(str(err), param_hint="--cc-name") from err
+        resolved_cc_id = source.cc_id
+    elif cc_id != 0:
+        resolved_cc_id = cc_id
+
+    if resolved_cc_id is not None:
+        try:
+            source = get_college_source(resolved_cc_id)
+        except KeyError as err:
+            raise typer.BadParameter(str(err), param_hint="--cc-id") from err
+        if not provider.supports_source(source):
+            raise typer.BadParameter(
+                f"No provider configured for source system={source.system!r} (cc_id={source.cc_id})",
+                param_hint="--cc-id",
+            )
 
     service = ScheduleService(db_path=DB_PATH, provider=provider)
     try:
@@ -73,7 +73,7 @@ def query(
             target_major=target_major,
             term_label=term,
             requirement_filter=requirement or None,
-            cc_id=cc_id,
+            cc_id=resolved_cc_id,
         )
     except ValueError as err:
         typer.echo(f"Invalid input: {err}", err=True)

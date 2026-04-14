@@ -23,7 +23,9 @@ class AssistDiscovery:
         self.allow_non_numeric_keys = allow_non_numeric_keys
 
     def get_institutions(self) -> list[Institution]:
-        rows = self.client.get_json(f"{self.client.api_prefix}/institutions")
+        rows = self.client.get_json_with_retry(
+            f"{self.client.api_prefix}/institutions", timeout=20, max_retries=2
+        )
         institutions: list[Institution] = []
         for row in rows:
             names = row.get("names") or []
@@ -57,7 +59,9 @@ class AssistDiscovery:
         )
 
     def get_year_labels(self) -> dict[int, str]:
-        rows = self.client.get_json(f"{self.client.api_prefix}/academicYears")
+        rows = self.client.get_json_with_retry(
+            f"{self.client.api_prefix}/academicYears", timeout=20, max_retries=2
+        )
         labels: dict[int, str] = {}
         for row in rows:
             row_id = row.get("id")
@@ -74,8 +78,10 @@ class AssistDiscovery:
         return labels
 
     def _agreement_candidates(self, target_school_id: int) -> Iterable[dict]:
-        return self.client.get_json(
-            f"{self.client.api_prefix}/institutions/{target_school_id}/agreements"
+        return self.client.get_json_with_retry(
+            f"{self.client.api_prefix}/institutions/{target_school_id}/agreements",
+            timeout=20,
+            max_retries=2,
         )
 
     def _reports_for_pair(
@@ -91,7 +97,7 @@ class AssistDiscovery:
             f"&academicYearId={year_id}"
             f"&categoryCode={self.category_code}"
         )
-        response = self.client.get_json(path)
+        response = self.client.get_json_with_retry(path, timeout=15, max_retries=2)
         return list(response.get("reports", []))
 
     @staticmethod

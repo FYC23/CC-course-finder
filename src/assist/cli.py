@@ -59,6 +59,7 @@ def ingest(
         target_school=target_school,
         major_name=target_major,
         max_community_colleges=max_cc,
+        allow_non_numeric_keys=allow_non_numeric_keys,
         log=lambda message: typer.echo(message, err=True),
     )
     typer.echo(

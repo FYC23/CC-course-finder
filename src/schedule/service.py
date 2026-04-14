@@ -57,7 +57,7 @@ class ScheduleService:
                 availability = self._provider.search_course(
                     source=source, term=term, course_code=course_code
                 )
-            except requests.RequestException as err:
+            except (requests.RequestException, ValueError) as err:
                 availability = CourseAvailability(
                     cc_id=source.cc_id,
                     cc_name=source.cc_name,

@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 from src.assist.models import ArticulationRow, IngestRun
 from src.assist.store import ensure_db, save_rows, save_run
 from src.schedule import cli as schedule_cli
+from src.schedule.composite import CompositeProvider
 
 _RUNNER = CliRunner()
 _BASE_ARGS = [
@@ -98,7 +99,11 @@ def test_cli_returns_fail_soft_row_on_provider_request_error(monkeypatch, tmp_pa
         def search_course(self, *, source, term, course_code):
             raise requests.RequestException("network timeout")
 
-    monkeypatch.setattr(schedule_cli, "BannerEllucianProvider", _FailingProvider)
+    monkeypatch.setattr(
+        schedule_cli,
+        "build_composite_provider",
+        lambda: CompositeProvider([_FailingProvider()]),
+    )
     result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-id", "2"])
 
     assert result.exit_code == 0
@@ -112,7 +117,67 @@ def test_cli_rejects_unsupported_source_system(monkeypatch) -> None:
         def supports_source(self, source) -> bool:
             return False
 
-    monkeypatch.setattr(schedule_cli, "BannerEllucianProvider", _FakeProvider)
+    monkeypatch.setattr(
+        schedule_cli,
+        "build_composite_provider",
+        lambda: CompositeProvider([_FakeProvider()]),
+    )
     result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-id", "2"])
     assert result.exit_code == 2
     assert "No provider configured for source system='banner'" in result.output
+
+
+def test_cli_all_ccs_passes_none_cc_id(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_row(db_path)
+    monkeypatch.setattr(schedule_cli, "DB_PATH", db_path)
+
+    received_cc_ids: list[int | None] = []
+
+    class _SpyService:
+        def __init__(self, db_path, provider) -> None:
+            pass
+
+        def query(self, *, cc_id, **kwargs):
+            received_cc_ids.append(cc_id)
+            return []
+
+    monkeypatch.setattr(schedule_cli, "ScheduleService", _SpyService)
+    result = _RUNNER.invoke(schedule_cli.app, _BASE_ARGS)  # default cc_id=0
+
+    assert result.exit_code == 0
+    assert received_cc_ids == [None]
+
+
+def test_cli_cc_name_resolves_to_cc_id(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_row(db_path)
+    monkeypatch.setattr(schedule_cli, "DB_PATH", db_path)
+
+    received_cc_ids: list[int | None] = []
+
+    class _SpyService:
+        def __init__(self, db_path, provider) -> None:
+            pass
+
+        def query(self, *, cc_id, **kwargs):
+            received_cc_ids.append(cc_id)
+            return []
+
+    monkeypatch.setattr(schedule_cli, "ScheduleService", _SpyService)
+    result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-name", "evergreen"])
+
+    assert result.exit_code == 0
+    assert received_cc_ids == [2]
+
+
+def test_cli_cc_name_no_match_exits_2() -> None:
+    result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-name", "nonexistent college"])
+    assert result.exit_code == 2
+    assert "No schedule source matches" in result.output
+
+
+def test_cli_cc_name_and_cc_id_mutually_exclusive() -> None:
+    result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-name", "evergreen", "--cc-id", "2"])
+    assert result.exit_code == 2
+    assert "mutually exclusive" in result.output

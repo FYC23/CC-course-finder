@@ -10,6 +10,12 @@ class FakeClient:
         self.api_prefix = "/api"
 
     def get_json(self, path: str) -> Any:
+        return self._get_json(path)
+
+    def get_json_with_retry(self, path: str, *, timeout: int = 15, max_retries: int = 2) -> Any:
+        return self._get_json(path)
+
+    def _get_json(self, path: str) -> Any:
         if path == "/api/institutions":
             return [
                 {
@@ -49,6 +55,12 @@ class NonNumericKeyClient:
         self.api_prefix = "/api"
 
     def get_json(self, path: str) -> Any:
+        return self._get_json(path)
+
+    def get_json_with_retry(self, path: str, *, timeout: int = 15, max_retries: int = 2) -> Any:
+        return self._get_json(path)
+
+    def _get_json(self, path: str) -> Any:
         if path == "/api/institutions":
             return [
                 {
@@ -99,6 +111,12 @@ class MixedSameYearOrderClient:
         self.api_prefix = "/api"
 
     def get_json(self, path: str) -> Any:
+        return self._get_json(path)
+
+    def get_json_with_retry(self, path: str, *, timeout: int = 15, max_retries: int = 2) -> Any:
+        return self._get_json(path)
+
+    def _get_json(self, path: str) -> Any:
         if path == "/api/institutions":
             return [
                 {
@@ -138,6 +156,12 @@ class DuplicateCandidateClient:
         self.api_prefix = "/api"
 
     def get_json(self, path: str) -> Any:
+        return self._get_json(path)
+
+    def get_json_with_retry(self, path: str, *, timeout: int = 15, max_retries: int = 2) -> Any:
+        return self._get_json(path)
+
+    def _get_json(self, path: str) -> Any:
         if path == "/api/institutions":
             return [
                 {

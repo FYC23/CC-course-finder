@@ -1,0 +1,82 @@
+[
+  {
+    "cc_id": 2,
+    "cc_name": "Evergreen Valley College",
+    "system": "banner",
+    "base_url": "https://colss-prod.ec.sjeccd.edu/Student/Courses/SearchResult",
+    "locations": ["EVC"],
+    "source_url": "https://www.evc.edu/current-students/schedule-of-classes"
+  },
+  {
+    "cc_id": 80,
+    "cc_name": "West Valley College",
+    "system": "wvm_static",
+    "base_url": "https://schedule.wvm.edu",
+    "locations": ["WVC"],
+    "source_url": "https://www.westvalley.edu/academics/schedule-of-classes/"
+  },
+  {
+    "cc_id": 114,
+    "cc_name": "Diablo Valley College",
+    "system": "vsb_4cd",
+    "base_url": "https://vsb.4cd.edu",
+    "locations": ["DVC"],
+    "source_url": "https://www.dvc.edu/enrollment/schedule-of-classes.html"
+  },
+  {
+    "cc_id": 61,
+    "cc_name": "Los Medanos College",
+    "system": "vsb_4cd",
+    "base_url": "https://vsb.4cd.edu",
+    "locations": ["LMC"],
+    "source_url": "https://www.losmedanos.edu/enrollment/schedule.aspx"
+  },
+  {
+    "cc_id": 28,
+    "cc_name": "Contra Costa College",
+    "system": "vsb_4cd",
+    "base_url": "https://vsb.4cd.edu",
+    "locations": ["CCC"],
+    "source_url": "https://www.contracosta.edu/class-schedule/"
+  },
+  {
+    "cc_id": 62,
+    "cc_name": "Mount San Antonio College",
+    "system": "banner_ssb_classic",
+    "base_url": "https://prodrg.mtsac.edu",
+    "locations": ["MTSAC"],
+    "source_url": "https://www.mtsac.edu/schedule/"
+  },
+  {
+    "cc_id": 33,
+    "cc_name": "City College of San Francisco",
+    "system": "banner_ssb_classic",
+    "base_url": "https://ssb1.ccsf.edu:8105",
+    "locations": ["CCSF"],
+    "source_url": "https://www.ccsf.edu/academics/schedule-of-classes"
+  },
+  {
+    "cc_id": 3,
+    "cc_name": "Los Angeles City College",
+    "system": "banner",
+    "base_url": "https://laccss-prod.ec.laccd.edu/Student/Courses/SearchResult",
+    "locations": ["LACC"],
+    "source_url": "https://www.lacitycollege.edu/academics/class-schedules"
+  },
+  {
+    "cc_id": 4,
+    "cc_name": "College of Marin",
+    "system": "marin_colleague",
+    "base_url": "https://netapps.marin.edu/Apps/Directory/ScheduleSearch.aspx",
+    "locations": ["0000"],
+    "source_url": "https://www1.marin.edu/schedule"
+  },
+  {
+    "cc_id": 5,
+    "cc_name": "College of San Mateo",
+    "system": "smcccd_colleague",
+    "base_url": "https://api.smccd.edu/v1/schedule",
+    "locations": ["college of san mateo"],
+    "source_url": "https://collegeofsanmateo.edu/schedule/"
+  }
+]

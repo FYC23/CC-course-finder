@@ -34,7 +34,7 @@ _WVM_SOURCE = CollegeScheduleSource(
     cc_name="West Valley College",
     system="wvm_static",
     base_url="https://schedule.wvm.edu",
-    locations=(),
+    locations=("WVC",),
 )
 
 _CRNS_PAYLOAD = [
@@ -45,6 +45,7 @@ _CRNS_PAYLOAD = [
         "CRSE_TITLE": "Calculus II",
         "SSBSECT_INSM_CODE": "INP",
         "SSBSECT_SEATS_AVAIL": 5,
+        "SSBSECT_CAMP_CODE": "WVC",
     },
     {
         "CRN": "70002",
@@ -53,6 +54,7 @@ _CRNS_PAYLOAD = [
         "CRSE_TITLE": "Calculus II",
         "SSBSECT_INSM_CODE": "AON",
         "SSBSECT_SEATS_AVAIL": 0,
+        "SSBSECT_CAMP_CODE": "WVC",
     },
     {
         "CRN": "70003",
@@ -61,6 +63,7 @@ _CRNS_PAYLOAD = [
         "CRSE_TITLE": "English Composition",
         "SSBSECT_INSM_CODE": "HYB",
         "SSBSECT_SEATS_AVAIL": 3,
+        "SSBSECT_CAMP_CODE": "WVC",
     },
 ]
 
@@ -147,3 +150,48 @@ def test_crse_numb_leading_zeros_match() -> None:
     assert out.offered is True
     assert out.sections[0].instructor == "Grace Hopper"
     assert out.sections[0].modality == "hybrid"
+
+
+def test_location_filter_excludes_other_campus() -> None:
+    """MC (Mission College) rows excluded when source.locations=('WVC',)."""
+    crns_mixed = [
+        {
+            "CRN": "70010",
+            "SUBJ_CODE": "MATH",
+            "CRSE_NUMB": "1B",
+            "CRSE_TITLE": "Calculus II",
+            "SSBSECT_INSM_CODE": "INP",
+            "SSBSECT_SEATS_AVAIL": 5,
+            "SSBSECT_CAMP_CODE": "WVC",
+        },
+        {
+            "CRN": "70011",
+            "SUBJ_CODE": "MATH",
+            "CRSE_NUMB": "1B",
+            "CRSE_TITLE": "Calculus II",
+            "SSBSECT_INSM_CODE": "INP",
+            "SSBSECT_SEATS_AVAIL": 8,
+            "SSBSECT_CAMP_CODE": "MC",
+        },
+    ]
+    instructors = [
+        {"SIRASGN_CRN": "70010", "INSTRUCTOR_NAME": "Ada Lovelace"},
+        {"SIRASGN_CRN": "70011", "INSTRUCTOR_NAME": "Mission Instructor"},
+    ]
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(json_obj=crns_mixed),
+            _FakeResponse(json_obj=instructors),
+        ]
+    )
+    provider = WvmStaticProvider(session=session)
+    out = provider.search_course(
+        source=_WVM_SOURCE,
+        term=parse_term_label("Summer 2026"),
+        course_code="MATH 1B",
+    )
+
+    assert out.offered is True
+    assert len(out.sections) == 1
+    assert out.sections[0].section_id == "70010"
+    assert out.sections[0].instructor == "Ada Lovelace"

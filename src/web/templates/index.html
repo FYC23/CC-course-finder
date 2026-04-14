@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CC Course Finder</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <h1>CC Course Finder</h1>
+
+  <div id="error-toast"></div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="school">University</label>
+      <select id="school"><option value="">Loading…</option></select>
+    </div>
+    <div class="form-group">
+      <label for="major">Major</label>
+      <select id="major" disabled><option value="">Select university first</option></select>
+    </div>
+    <div class="form-group">
+      <label for="term">Term</label>
+      <select id="term"></select>
+    </div>
+    <div class="form-group">
+      <label for="requirement">Requirement filter (optional)</label>
+      <input type="text" id="requirement" placeholder="e.g. Area C" />
+    </div>
+    <div class="form-group">
+      <label for="status-filter">Availability</label>
+      <select id="status-filter">
+        <option value="all">All statuses</option>
+        <option value="offered">Offered</option>
+        <option value="not_offered">Not offered</option>
+        <option value="articulation_only">Articulation only</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <button id="search-btn" disabled>Search</button>
+    </div>
+  </div>
+
+  <div id="ingest-bar" style="display:none; margin-bottom:1rem; align-items:center; gap:0.75rem;" class="form-row">
+    <span id="staleness-badge" class="badge badge-gray">ASSIST: unknown</span>
+    <button id="refresh-btn" type="button" style="background:#64748b;">Refresh ASSIST Data</button>
+    <div id="job-status"></div>
+  </div>
+
+  <details id="ingest-options" style="margin-bottom:1rem; display:none;">
+    <summary style="cursor:pointer; font-size:0.85rem; color:#2563eb;">Advanced ingest options</summary>
+    <div class="form-row" style="margin-top:0.5rem;">
+      <div class="form-group">
+        <label for="max-cc">Max community colleges</label>
+        <input type="number" id="max-cc" value="8" min="1" max="200" style="min-width:120px;" />
+      </div>
+      <div class="form-group">
+        <label style="text-transform:none; font-weight:normal;">
+          <input type="checkbox" id="allow-non-numeric-keys" style="min-width:auto; margin-right:0.3rem;" />
+          Allow non-numeric agreement keys (experimental)
+        </label>
+      </div>
+    </div>
+  </details>
+
+  <div id="results-count"></div>
+  <div id="results-container"></div>
+
+  <script>
+    const schoolEl = document.getElementById('school');
+    const majorEl = document.getElementById('major');
+    const termEl = document.getElementById('term');
+    const reqEl = document.getElementById('requirement');
+    const statusEl = document.getElementById('status-filter');
+    const searchBtn = document.getElementById('search-btn');
+    const toast = document.getElementById('error-toast');
+    const countEl = document.getElementById('results-count');
+    const container = document.getElementById('results-container');
+    const ingestBar = document.getElementById('ingest-bar');
+    const ingestOptionsEl = document.getElementById('ingest-options');
+    const stalenessBadgeEl = document.getElementById('staleness-badge');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const jobStatusEl = document.getElementById('job-status');
+    const maxCcEl = document.getElementById('max-cc');
+    const allowNonNumericEl = document.getElementById('allow-non-numeric-keys');
+    var lastResults = [];
+    var activeJobId = null;
+    var pollTimer = null;
+    var rowsExistForSelection = false;
+    var ingestDefaultOptions = { max_cc: 8, allow_non_numeric_keys: false };
+
+    /** Calendar year of the Fall term that starts the active school year (July 1 rollover). */
+    function schoolYearFallCalendarYear(d) {
+      var y = d.getFullYear();
+      var m = d.getMonth();
+      if (m >= 6) return y;
+      return y - 1;
+    }
+
+    /** Pick a sensible default among Fall Y / Spring Y+1 / Summer Y+1. */
+    function suggestedTermLabelForSchoolYear(d, fallY) {
+      var m = d.getMonth();
+      var springY = fallY + 1;
+      if (m >= 7 && m <= 9) return 'Fall ' + fallY;
+      if (m >= 10 || m <= 3) return 'Spring ' + springY;
+      return 'Summer ' + springY;
+    }
+
+    /** Chronological order: Spring Y, Summer Y, Fall Y, Spring Y+1, ... */
+    function termLabelToChronoIndex(label) {
+      var space = label.indexOf(' ');
+      var season = label.slice(0, space);
+      var year = parseInt(label.slice(space + 1), 10);
+      var si = season === 'Spring' ? 0 : season === 'Summer' ? 1 : 2;
+      return year * 3 + si;
+    }
+
+    function chronoIndexToTermLabel(idx) {
+      var seasons = ['Spring', 'Summer', 'Fall'];
+      var year = Math.floor(idx / 3);
+      var si = idx - year * 3;
+      return seasons[si] + ' ' + year;
+    }
+
+    function populateTermSelect() {
+      var now = new Date();
+      var fallY = schoolYearFallCalendarYear(now);
+      var def = suggestedTermLabelForSchoolYear(now, fallY);
+      var refIdx = termLabelToChronoIndex(def);
+      termEl.replaceChildren();
+      for (var k = -1; k <= 3; k++) {
+        var label = chronoIndexToTermLabel(refIdx + k);
+        var opt = document.createElement('option');
+        opt.value = label;
+        opt.textContent = label;
+        if (label === def) opt.selected = true;
+        termEl.appendChild(opt);
+      }
+    }
+
+    function showError(msg) {
+      toast.textContent = msg;
+      toast.style.display = 'block';
+    }
+
+    function clearError() {
+      toast.style.display = 'none';
+      toast.textContent = '';
+    }
+
+    function updateSearchBtn() {
+      searchBtn.disabled = !(schoolEl.value && majorEl.value && termEl.value.trim() && rowsExistForSelection);
+    }
+
+    function setStalenessBadge(text, isStale) {
+      stalenessBadgeEl.textContent = text;
+      stalenessBadgeEl.classList.toggle('stale', !!isStale);
+    }
+
+    function clearJobStatus() {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+      activeJobId = null;
+      jobStatusEl.classList.remove('loading');
+    }
+
+    async function pollJobStatus() {
+      if (!activeJobId) return;
+      try {
+        const res = await fetch('/api/ingest/status/' + encodeURIComponent(activeJobId));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const status = await res.json();
+        if (status.status === 'pending' || status.status === 'running') {
+          jobStatusEl.classList.add('loading');
+          jobStatusEl.textContent = 'Ingest ' + status.status + '...';
+          pollTimer = setTimeout(pollJobStatus, 3000);
+          return;
+        }
+
+        if (status.status === 'completed') {
+          clearJobStatus();
+          jobStatusEl.textContent = 'Ingest complete. Rows: ' + status.rows_written;
+          await loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
+          return;
+        }
+
+        clearJobStatus();
+        jobStatusEl.textContent = 'Ingest failed';
+        showError('Ingest failed: ' + (status.error_message || 'Unknown error'));
+      } catch (e) {
+        clearJobStatus();
+        showError('Failed to poll ingest status: ' + e.message);
+      }
+    }
+
+    async function refreshAssistData() {
+      clearError();
+      if (!(schoolEl.value && majorEl.value)) return;
+      refreshBtn.disabled = true;
+      jobStatusEl.classList.add('loading');
+      jobStatusEl.textContent = 'Starting ingest...';
+      try {
+        const res = await fetch('/api/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_school: schoolEl.value,
+            target_major: majorEl.value,
+            options: ingestDefaultOptions,
+          }),
+        });
+        const body = await res.json().catch(function() { return {}; });
+        if (!res.ok) throw new Error(body.detail || ('HTTP ' + res.status));
+        activeJobId = body.job_id;
+        pollTimer = setTimeout(pollJobStatus, 300);
+      } catch (e) {
+        clearJobStatus();
+        showError('Failed to start ingest: ' + e.message);
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    async function loadFreshnessAndUpdateUI(school, major) {
+      clearJobStatus();
+      rowsExistForSelection = false;
+      updateSearchBtn();
+      if (!(school && major)) {
+        ingestBar.style.display = 'none';
+        ingestOptionsEl.style.display = 'none';
+        setStalenessBadge('ASSIST: unknown', false);
+        return;
+      }
+
+      ingestBar.style.display = 'flex';
+      ingestOptionsEl.style.display = 'block';
+      setStalenessBadge('ASSIST: checking...', false);
+      try {
+        const params = new URLSearchParams({
+          school: school,
+          major: major,
+          max_cc: String(ingestDefaultOptions.max_cc),
+          allow_non_numeric_keys: String(ingestDefaultOptions.allow_non_numeric_keys),
+        });
+        const res = await fetch('/api/ingest/check?' + params.toString());
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const payload = await res.json();
+        rowsExistForSelection = !!payload.rows_exist;
+        if (!payload.rows_exist) {
+          setStalenessBadge('ASSIST: missing, refresh required', true);
+        } else if (payload.freshness) {
+          setStalenessBadge(
+            'ASSIST: ' + payload.freshness.staleness_label,
+            payload.freshness.staleness_seconds >= 86400
+          );
+        } else {
+          setStalenessBadge('ASSIST: unknown freshness', false);
+        }
+      } catch (e) {
+        setStalenessBadge('ASSIST: check failed', true);
+        showError('Failed to check ASSIST freshness: ' + e.message);
+      }
+      updateSearchBtn();
+    }
+
+    async function loadSchools() {
+      try {
+        const res = await fetch('/api/schools');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const schools = await res.json();
+        schoolEl.innerHTML = '<option value="">Select university…</option>' +
+          schools.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('');
+      } catch (e) {
+        showError('Failed to load universities: ' + e.message);
+      }
+    }
+
+    async function loadMajors(school) {
+      majorEl.disabled = true;
+      majorEl.innerHTML = '<option value="">Loading…</option>';
+      try {
+        const res = await fetch('/api/majors?school=' + encodeURIComponent(school));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const majors = await res.json();
+        majorEl.innerHTML = '<option value="">Select major…</option>' +
+          majors.map(m => '<option value="' + esc(m) + '">' + esc(m) + '</option>').join('');
+        majorEl.disabled = false;
+      } catch (e) {
+        showError('Failed to load majors: ' + e.message);
+      }
+      updateSearchBtn();
+    }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function availabilityKey(offered) {
+      if (offered === true) return 'offered';
+      if (offered === false) return 'not_offered';
+      return 'articulation_only';
+    }
+
+    function availabilityRank(offered) {
+      if (offered === true) return 0;
+      if (offered === false) return 1;
+      return 2;
+    }
+
+    function offeredBadgeEl(offered) {
+      var span = document.createElement('span');
+      span.className = 'badge';
+      if (offered === null) {
+        span.classList.add('badge-gray');
+        span.textContent = 'Articulation only';
+        return span;
+      }
+      if (offered) {
+        span.classList.add('badge-green');
+        span.textContent = 'Offered';
+        return span;
+      }
+      span.classList.add('badge-red');
+      span.textContent = 'Not offered';
+      return span;
+    }
+
+    function renderSectionsEl(sections) {
+      if (!sections.length) {
+        return document.createTextNode('');
+      }
+      var details = document.createElement('details');
+      var summary = document.createElement('summary');
+      summary.textContent = sections.length + ' section(s)';
+      details.appendChild(summary);
+
+      var table = document.createElement('table');
+      table.className = 'sections-table';
+      var thead = document.createElement('thead');
+      var headRow = document.createElement('tr');
+      ['Section', 'Status', 'Modality', 'Instructor'].forEach(function(label) {
+        var th = document.createElement('th');
+        th.textContent = label;
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
+      for (var i = 0; i < sections.length; i++) {
+        var s = sections[i];
+        var row = document.createElement('tr');
+        [s.section_id, s.status, s.modality, s.instructor].forEach(function(value) {
+          var td = document.createElement('td');
+          td.textContent = value || '';
+          row.appendChild(td);
+        });
+        tbody.appendChild(row);
+      }
+      table.appendChild(tbody);
+      details.appendChild(table);
+      return details;
+    }
+
+    function makeInfoMessage(message) {
+      var p = document.createElement('p');
+      p.className = 'results-message';
+      p.textContent = message;
+      return p;
+    }
+
+    function renderResults(results) {
+      container.replaceChildren();
+      if (!results.length) {
+        countEl.textContent = '';
+        container.appendChild(makeInfoMessage('No results found.'));
+        return;
+      }
+
+      var filtered = [];
+      for (var i = 0; i < results.length; i++) {
+        var item = results[i];
+        if (statusEl.value === 'all' || availabilityKey(item.offered_this_term) === statusEl.value) {
+          filtered.push(item);
+        }
+      }
+
+      if (!filtered.length) {
+        countEl.textContent = 'Showing 0 of ' + results.length + ' course(s)';
+        container.appendChild(makeInfoMessage('No matches for current availability filter.'));
+        return;
+      }
+
+      countEl.textContent = 'Showing ' + filtered.length + ' of ' + results.length + ' course(s)';
+
+      var grouped = {};
+      for (var j = 0; j < filtered.length; j++) {
+        var course = filtered[j];
+        var requirements = course.target_requirements && course.target_requirements.length
+          ? course.target_requirements
+          : ['Unspecified requirement'];
+        for (var k = 0; k < requirements.length; k++) {
+          if (!grouped[requirements[k]]) grouped[requirements[k]] = [];
+          grouped[requirements[k]].push(course);
+        }
+      }
+
+      var requirementNames = Object.keys(grouped).sort(function(a, b) {
+        return a.localeCompare(b);
+      });
+
+      for (var reqIdx = 0; reqIdx < requirementNames.length; reqIdx++) {
+        var requirementName = requirementNames[reqIdx];
+        var courses = grouped[requirementName];
+        courses.sort(function(a, b) {
+          var rankDiff = availabilityRank(a.offered_this_term) - availabilityRank(b.offered_this_term);
+          if (rankDiff !== 0) return rankDiff;
+          var ccDiff = a.cc_name.localeCompare(b.cc_name);
+          if (ccDiff !== 0) return ccDiff;
+          return a.course_code.localeCompare(b.course_code);
+        });
+
+        var groupSection = document.createElement('section');
+        groupSection.className = 'requirement-group';
+        var groupHeader = document.createElement('div');
+        groupHeader.className = 'requirement-group-header';
+        var heading = document.createElement('h2');
+        heading.textContent = requirementName;
+        var groupCount = document.createElement('span');
+        groupCount.className = 'group-count';
+        groupCount.textContent = courses.length + ' course(s)';
+        groupHeader.appendChild(heading);
+        groupHeader.appendChild(groupCount);
+        groupSection.appendChild(groupHeader);
+
+        var table = document.createElement('table');
+        var thead = document.createElement('thead');
+        var headRow = document.createElement('tr');
+        ['CC', 'Course', 'UC Equivalent', 'Offered?', 'Sections'].forEach(function(label) {
+          var th = document.createElement('th');
+          th.textContent = label;
+          headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+        for (var courseIdx = 0; courseIdx < courses.length; courseIdx++) {
+          var courseRow = courses[courseIdx];
+          var courseRequirements = courseRow.target_requirements && courseRow.target_requirements.length
+            ? courseRow.target_requirements
+            : ['Unspecified requirement'];
+          var tr = document.createElement('tr');
+
+          var ccTd = document.createElement('td');
+          ccTd.textContent = courseRow.cc_name;
+          tr.appendChild(ccTd);
+
+          var courseTd = document.createElement('td');
+          var link = document.createElement('a');
+          link.href = courseRow.source_url;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.textContent = courseRow.course_code;
+          courseTd.appendChild(link);
+          courseTd.appendChild(document.createElement('br'));
+          var courseTitle = document.createElement('small');
+          courseTitle.textContent = courseRow.course_title;
+          courseTd.appendChild(courseTitle);
+          var otherRequirements = [];
+          for (var otherReqIdx = 0; otherReqIdx < courseRequirements.length; otherReqIdx++) {
+            var reqValue = courseRequirements[otherReqIdx];
+            if (reqValue !== requirementName) otherRequirements.push(reqValue);
+          }
+          if (otherRequirements.length) {
+            var meta = document.createElement('div');
+            meta.className = 'course-meta';
+            var metaText = document.createElement('small');
+            metaText.textContent = 'Also satisfies: ';
+            for (var chipIdx = 0; chipIdx < otherRequirements.length; chipIdx++) {
+              var chip = document.createElement('span');
+              chip.className = 'req-chip';
+              chip.textContent = otherRequirements[chipIdx];
+              metaText.appendChild(chip);
+              if (chipIdx < otherRequirements.length - 1) {
+                metaText.appendChild(document.createTextNode(' '));
+              }
+            }
+            meta.appendChild(metaText);
+            courseTd.appendChild(meta);
+          }
+          tr.appendChild(courseTd);
+
+          var equivalentTd = document.createElement('td');
+          equivalentTd.textContent = courseRow.uc_equivalent;
+          tr.appendChild(equivalentTd);
+
+          var offeredTd = document.createElement('td');
+          offeredTd.appendChild(offeredBadgeEl(courseRow.offered_this_term));
+          tr.appendChild(offeredTd);
+
+          var sectionsTd = document.createElement('td');
+          sectionsTd.appendChild(renderSectionsEl(courseRow.sections));
+          tr.appendChild(sectionsTd);
+
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        groupSection.appendChild(table);
+        container.appendChild(groupSection);
+      }
+    }
+
+    schoolEl.addEventListener('change', function() {
+      clearError();
+      majorEl.innerHTML = '<option value="">Select major…</option>';
+      majorEl.disabled = true;
+      rowsExistForSelection = false;
+      ingestBar.style.display = 'none';
+      ingestOptionsEl.style.display = 'none';
+      updateSearchBtn();
+      if (schoolEl.value) loadMajors(schoolEl.value);
+    });
+
+    majorEl.addEventListener('change', function() {
+      clearError();
+      loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
+    });
+    termEl.addEventListener('change', updateSearchBtn);
+    refreshBtn.addEventListener('click', refreshAssistData);
+    maxCcEl.addEventListener('change', function() {
+      ingestDefaultOptions.max_cc = parseInt(maxCcEl.value, 10) || 8;
+      loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
+    });
+    allowNonNumericEl.addEventListener('change', function() {
+      ingestDefaultOptions.allow_non_numeric_keys = !!allowNonNumericEl.checked;
+      loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
+    });
+    statusEl.addEventListener('change', function() {
+      renderResults(lastResults);
+    });
+
+    searchBtn.addEventListener('click', function() {
+      clearError();
+      searchBtn.disabled = true;
+      searchBtn.textContent = 'Searching…';
+      container.innerHTML = '';
+      countEl.textContent = '';
+      lastResults = [];
+      var params = 'school=' + encodeURIComponent(schoolEl.value) +
+        '&major=' + encodeURIComponent(majorEl.value) +
+        '&term=' + encodeURIComponent(termEl.value.trim());
+      if (reqEl.value.trim()) params += '&requirement=' + encodeURIComponent(reqEl.value.trim());
+      fetch('/api/search?' + params)
+        .then(function(res) {
+          if (!res.ok) {
+            return res.json().catch(function() { return {}; }).then(function(body) {
+              if (res.status === 409) {
+                throw new Error(body.detail || 'Run ASSIST ingest first.');
+              }
+              throw new Error(body.detail || 'HTTP ' + res.status);
+            });
+          }
+          return res.json();
+        })
+        .then(function(data) {
+          lastResults = data;
+          renderResults(lastResults);
+        })
+        .catch(function(e) { showError('Search failed: ' + e.message); })
+        .finally(function() {
+          searchBtn.disabled = false;
+          searchBtn.textContent = 'Search';
+          updateSearchBtn();
+        });
+    });
+
+    populateTermSelect();
+    loadSchools();
+  </script>
+</body>
+</html>
