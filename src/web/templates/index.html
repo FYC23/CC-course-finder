@@ -22,7 +22,7 @@
     </div>
     <div class="form-group">
       <label for="term">Term</label>
-      <input type="text" id="term" placeholder="Spring 2026" />
+      <select id="term"></select>
     </div>
     <div class="form-group">
       <label for="requirement">Requirement filter (optional)</label>
@@ -90,6 +90,55 @@
     var pollTimer = null;
     var rowsExistForSelection = false;
     var ingestDefaultOptions = { max_cc: 8, allow_non_numeric_keys: false };
+
+    /** Calendar year of the Fall term that starts the active school year (July 1 rollover). */
+    function schoolYearFallCalendarYear(d) {
+      var y = d.getFullYear();
+      var m = d.getMonth();
+      if (m >= 6) return y;
+      return y - 1;
+    }
+
+    /** Pick a sensible default among Fall Y / Spring Y+1 / Summer Y+1. */
+    function suggestedTermLabelForSchoolYear(d, fallY) {
+      var m = d.getMonth();
+      var springY = fallY + 1;
+      if (m >= 7 && m <= 9) return 'Fall ' + fallY;
+      if (m >= 10 || m <= 3) return 'Spring ' + springY;
+      return 'Summer ' + springY;
+    }
+
+    /** Chronological order: Spring Y, Summer Y, Fall Y, Spring Y+1, ... */
+    function termLabelToChronoIndex(label) {
+      var space = label.indexOf(' ');
+      var season = label.slice(0, space);
+      var year = parseInt(label.slice(space + 1), 10);
+      var si = season === 'Spring' ? 0 : season === 'Summer' ? 1 : 2;
+      return year * 3 + si;
+    }
+
+    function chronoIndexToTermLabel(idx) {
+      var seasons = ['Spring', 'Summer', 'Fall'];
+      var year = Math.floor(idx / 3);
+      var si = idx - year * 3;
+      return seasons[si] + ' ' + year;
+    }
+
+    function populateTermSelect() {
+      var now = new Date();
+      var fallY = schoolYearFallCalendarYear(now);
+      var def = suggestedTermLabelForSchoolYear(now, fallY);
+      var refIdx = termLabelToChronoIndex(def);
+      termEl.replaceChildren();
+      for (var k = -1; k <= 3; k++) {
+        var label = chronoIndexToTermLabel(refIdx + k);
+        var opt = document.createElement('option');
+        opt.value = label;
+        opt.textContent = label;
+        if (label === def) opt.selected = true;
+        termEl.appendChild(opt);
+      }
+    }
 
     function showError(msg) {
       toast.textContent = msg;
@@ -483,7 +532,7 @@
       clearError();
       loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
     });
-    termEl.addEventListener('input', updateSearchBtn);
+    termEl.addEventListener('change', updateSearchBtn);
     refreshBtn.addEventListener('click', refreshAssistData);
     maxCcEl.addEventListener('change', function() {
       ingestDefaultOptions.max_cc = parseInt(maxCcEl.value, 10) || 8;
@@ -532,6 +581,7 @@
         });
     });
 
+    populateTermSelect();
     loadSchools();
   </script>
 </body>

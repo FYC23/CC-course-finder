@@ -1,29 +1,67 @@
 # Community College Course Finder
 
+One query: **which community college courses transfer** (via ASSIST) **and are offered this term** (via live schedule lookups).
+
+**Current status (v0.1):** tuned for UCLA CS; ASSIST ingest fairly complete, schedule coverage pilot (~8 community colleges).
+
+## Quick start
+
+Prereqs: Python 3.12 + `[uv](https://github.com/astral-sh/uv)`
+
+Clone repo, then install deps.
+
+```bash
+git clone <repo-url>
+cd <repo-dir>
+```
+
+```bash
+uv python install 3.12
+uv venv --python 3.12
+source .venv/bin/activate
+uv sync
+```
+
+First-time (required): ingest ASSIST articulation rows into `data/assist.sqlite3`.
+
+```bash
+uv run python -m src.assist.cli ingest \
+  --target-school "University of California, Los Angeles" \
+  --target-major "Computer Science" \
+  --max-cc 8
+```
+
+Run web UI (joins articulation + schedule availability).
+
+```bash
+uv run uvicorn src.web.app:app --reload
+```
+
+Open `http://127.0.0.1:8000`.
+
+Optional: run schedule CLI directly (example uses term `"Summer 2026"` and college name substring `"West Valley"`).
+
+```bash
+uv run python -m src.schedule.cli query \
+  --target-school "University of California, Los Angeles" \
+  --target-major "Computer Science" \
+  --term "Summer 2026" \
+  --cc-name "West Valley" \
+  --requirement "MATH 31B"
+```
+
 ## Problem
 
 Finding community college courses that transfer to a specific university (e.g., UCLA CS) for a given term requires manually cross-referencing two separate systems:
 
-1. **[ASSIST.org](http://ASSIST.org)** — tells you *which* CC courses transfer to your target school/major
+1. **[ASSIST.org](https://assist.org)** — tells you *which* CC courses transfer to your target school/major
 2. **Each CC's class schedule** — tells you *whether* that course is actually being offered this term
 
-There is no existing tool that does both in one query. The result: students have to go school-by-school, hand-checking every single CC — extremely tedious.
-
-## Existing Solutions & Limitations
-
-- **[ASSIST.org](http://ASSIST.org)** — official CA articulation system. Covers transferability but has zero schedule data.
-- **Transferology** — broader national tool, same limitation. No live term schedule integration.
-- `jacobtbigham/ccc_transfers` (GitHub) — scrapes ASSIST for reverse lookup (UCI-specific). No schedule layer.
-- `Techwolfy/assist-scraper` (GitHub) — general ASSIST scraper, supports reverse articulation. No schedule layer.
-- `Castro19/WebScraping-Assist` (GitHub) — ASSIST scraper feeding a schedule builder. Unfinished.
-- **TransferVision** — clean UI over ASSIST data. Read-only, no schedule integration.
-- **Plan My Transfer** — free student tool for UC/CSU planning. No live schedule data.
-
-**The gap:** None of them check whether the course is actually being offered in a given term.
+No existing tool does both in one query. Result: students hand-check school-by-school, term-by-term.
 
 ## Plan
 
-### v1 — The Dumb Version (prototype, no AI)
+### v1 — Baseline (prototype, no AI)
 
 Two components:
 
@@ -40,11 +78,11 @@ Two components:
 - Parse: is this course offered in the target term? Online or in-person?
 - Output: filter ASSIST results to only currently-offered courses
 
-**Stack:** Python, `requests` + `pypdf` (ASSIST PDFs); schedule scraping likely `BeautifulSoup` later; maybe `rapidfuzz` if fuzzy matching becomes necessary
+**Stack:** Python; ASSIST ingest via `requests` + `pypdf`; schedule lookups via per-system adapters.
 
 **Final output:** "Here are 12 sections of Calc II transferable to UCLA CS, offered Summer 2026 — 5 are online."
 
-### v2 — Where LLMs might genuinely help
+### v2 — Where an LLM might help (optional)
 
 Only pull in an LLM if one of these specific problems comes up:
 
@@ -54,7 +92,9 @@ Only pull in an LLM if one of these specific problems comes up:
 
 Build the dumb version first. Add LLM only when hitting a wall that can't be rule-based out of.
 
-## Current v1 implementation (ASSIST layer)
+## Development
+
+### ASSIST layer (current)
 
 This repo now includes a first-pass ASSIST ingestion pipeline under `src/assist`.
 
@@ -68,14 +108,7 @@ Artifacts are cached under `data/assist_artifacts/`, and the local SQLite databa
 
 ### Local environment
 
-This project uses `uv` with a repo-local `.venv`.
-
-```bash
-uv python install 3.12
-uv venv --python 3.12
-source .venv/bin/activate
-uv sync
-```
+This project uses `uv` with a repo-local `.venv`. Install steps in [Quick start](#quick-start).
 
 ### Run tests
 
@@ -131,7 +164,7 @@ uv run python -m src.schedule.cli query \
   --requirement "MATH 31B"
 ```
 
-**College selection:** Default `--cc-id` is `0` (omit the flag): query **all** catalog-backed community colleges that appear in the articulation result. Use a nonzero `--cc-id` to pin one college. `**--cc-name`** accepts a **case-insensitive substring** of a catalog college name and must match **exactly one** entry (otherwise the CLI errors). `**--cc-name`** cannot be used together with a nonzero `**--cc-id`**.
+**College selection:** Default `--cc-id` is `0` (omit the flag): query **all** catalog-backed community colleges that appear in the articulation result. Use a nonzero `--cc-id` to pin one college. `--cc-name` accepts a **case-insensitive substring** of a catalog college name and must match **exactly one** entry (otherwise the CLI errors). `--cc-name` cannot be used together with a nonzero `--cc-id`.
 
 ```bash
 uv run python -m src.schedule.cli query \
@@ -148,6 +181,8 @@ Current v1 scope:
 - Schedule request failures are fail-soft per course (`offered=false`, error marker in `raw_summary`).
 
 **Supported colleges and adapters (current):**
+
+Pilot set only; expect this list to expand.
 
 
 | College                       | `cc_id` | Adapter                                                       | Status      |
@@ -169,44 +204,3 @@ Current v1 scope:
 `vsb_4cd` uses the Visual Schedule Builder (`vsb.4cd.edu`) shared by Diablo Valley, Los Medanos, and Contra Costa colleges. Term codes are derived deterministically (`YYYY` + `10`/`20`/`30` for Summer/Fall/Spring). Campus filtering is applied per-block using the `locations` field.
 
 `smcccd_colleague` uses the documented SMCCD API surface. The public docs expose `/courses`, but live responses require Basic Auth credentials; configure `SMCCD_API_USERNAME` and `SMCCD_API_PASSWORD` to enable live schedule pulls.
-
-## ASSIST integration incident notes
-
-During initial v1 implementation, ingest failed on the first API call with:
-
-- `HTTPError: 400 Client Error` on `https://assist.org/api/institutions`
-
-### Root issues discovered
-
-1. **Session/XSRF handshake requirement**
-  - ASSIST API calls required a browser-style session bootstrap first.
-  - Calling `/api/`* directly without the initial homepage request and anti-forgery header returned HTTP 400.
-2. **Major label matching was too strict/naive**
-  - Input like `"Computer Science"` did not always match ASSIST labels like `"Computer Science/B.S."`.
-  - A broader substring attempt matched incorrect majors (for example `"Computer Science and Engineering/B.S."`).
-3. **Agreement key assumptions were wrong**
-  - Some matching report keys were path-like strings, not numeric IDs.
-  - Casting report keys to `int` caused failures.
-
-### What was tried (including failed attempts)
-
-- Tried direct `/api/`* calls with basic headers only (`User-Agent`, `Accept`, `Referer`) -> **still 400**.
-- Tried homepage bootstrap without forwarding the correct XSRF header -> **still 400**.
-- Tried broad major substring matching to capture `/B.S.` suffixes -> **introduced false positives**.
-
-### Final fixes applied
-
-- Added ASSIST session bootstrap in `AssistHttpClient`:
-  - perform a homepage request first
-  - extract cookie `X-XSRF-TOKEN`
-  - send header `X-XSRF-TOKEN` on API calls
-  - retry once after a 400 by re-bootstrapping
-- Updated major matching to compare against the major base label (`"Computer Science"` vs `"Computer Science/B.S."`) while avoiding unrelated composites.
-- Updated agreement key handling to treat keys as strings and only select a year/report when a numeric artifact key is available for artifact download.
-
-### Result
-
-- Ingest no longer fails with HTTP 400 on startup.
-- Discovery resolves valid agreements for the requested major.
-- Ingest writes nonzero rows in normal runs (for example, `rows_written=14` with `--max-cc 2`).
-
