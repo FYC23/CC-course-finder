@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from src.assist.config import DB_PATH
-from src.assist.store import query_rows
+from src.assist.store import compute_options_hash, get_freshness, has_rows_for, query_rows
 from src.schedule.composite import build_composite_provider
 from src.schedule.service import ScheduleService
 from src.schedule.term import parse_term_label
@@ -28,6 +29,7 @@ def _get_service() -> ScheduleService:
 
 @router.get("/api/search")
 async def search(
+    response: Response,
     school: str = Query(...),
     major: str = Query(...),
     term: str = Query(...),
@@ -38,6 +40,15 @@ async def search(
         parse_term_label(term)
     except ValueError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
+
+    if not has_rows_for(DB_PATH, school, major):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "No ASSIST data for selected school/major. "
+                "Run ingest first from Refresh ASSIST Data."
+            ),
+        )
 
     artic_rows = query_rows(DB_PATH, school, major, requirement)
 
@@ -60,6 +71,17 @@ async def search(
         schedule_results = []
 
     results = join_results(artic_rows, schedule_results)
+    default_options_hash = compute_options_hash(8, False)
+    freshness = get_freshness(DB_PATH, school, major, default_options_hash)
+    if freshness is not None:
+        ingested_at = datetime.fromisoformat(freshness["ingested_at_utc"])
+        if ingested_at.tzinfo is None:
+            ingested_at = ingested_at.replace(tzinfo=timezone.utc)
+        staleness_seconds = int(
+            (datetime.now(tz=timezone.utc) - ingested_at).total_seconds()
+        )
+        response.headers["X-ASSIST-Staleness"] = str(max(0, staleness_seconds))
+
     return [
         {
             **{k: v for k, v in asdict(r).items() if k != "sections"},

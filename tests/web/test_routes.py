@@ -102,10 +102,9 @@ class TestSearch:
             assert "offered_this_term" in row
             assert "sections" in row
 
-    def test_search_unknown_returns_empty_list(self, client: TestClient) -> None:
+    def test_search_unknown_returns_409(self, client: TestClient) -> None:
         res = client.get("/api/search?school=Unknown&major=Unknown&term=Spring+2026")
-        assert res.status_code == 200
-        assert res.json() == []
+        assert res.status_code == 409
 
     def test_search_invalid_term(self, client: TestClient) -> None:
         res = client.get("/api/search?school=UCLA&major=Computer+Science&term=bad")

@@ -53,6 +53,8 @@ class IngestRun:
     target_major: str
     agreements_seen: int
     rows_written: int
+    max_cc: int | None = None
+    allow_non_numeric_keys: bool = False
 
     @classmethod
     def create(
@@ -61,6 +63,8 @@ class IngestRun:
         target_major: str,
         agreements_seen: int,
         rows_written: int,
+        max_cc: int | None = None,
+        allow_non_numeric_keys: bool = False,
     ) -> "IngestRun":
         created_at = datetime.now(tz=timezone.utc).isoformat()
         run_id = created_at.replace(":", "").replace("-", "").replace(".", "")
@@ -71,5 +75,7 @@ class IngestRun:
             target_major=target_major,
             agreements_seen=agreements_seen,
             rows_written=rows_written,
+            max_cc=max_cc,
+            allow_non_numeric_keys=allow_non_numeric_keys,
         )
 

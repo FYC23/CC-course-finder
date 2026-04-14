@@ -43,6 +43,28 @@
     </div>
   </div>
 
+  <div id="ingest-bar" style="display:none; margin-bottom:1rem; align-items:center; gap:0.75rem;" class="form-row">
+    <span id="staleness-badge" class="badge badge-gray">ASSIST: unknown</span>
+    <button id="refresh-btn" type="button" style="background:#64748b;">Refresh ASSIST Data</button>
+    <div id="job-status"></div>
+  </div>
+
+  <details id="ingest-options" style="margin-bottom:1rem; display:none;">
+    <summary style="cursor:pointer; font-size:0.85rem; color:#2563eb;">Advanced ingest options</summary>
+    <div class="form-row" style="margin-top:0.5rem;">
+      <div class="form-group">
+        <label for="max-cc">Max community colleges</label>
+        <input type="number" id="max-cc" value="8" min="1" max="200" style="min-width:120px;" />
+      </div>
+      <div class="form-group">
+        <label style="text-transform:none; font-weight:normal;">
+          <input type="checkbox" id="allow-non-numeric-keys" style="min-width:auto; margin-right:0.3rem;" />
+          Allow non-numeric agreement keys (experimental)
+        </label>
+      </div>
+    </div>
+  </details>
+
   <div id="results-count"></div>
   <div id="results-container"></div>
 
@@ -56,7 +78,18 @@
     const toast = document.getElementById('error-toast');
     const countEl = document.getElementById('results-count');
     const container = document.getElementById('results-container');
+    const ingestBar = document.getElementById('ingest-bar');
+    const ingestOptionsEl = document.getElementById('ingest-options');
+    const stalenessBadgeEl = document.getElementById('staleness-badge');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const jobStatusEl = document.getElementById('job-status');
+    const maxCcEl = document.getElementById('max-cc');
+    const allowNonNumericEl = document.getElementById('allow-non-numeric-keys');
     var lastResults = [];
+    var activeJobId = null;
+    var pollTimer = null;
+    var rowsExistForSelection = false;
+    var ingestDefaultOptions = { max_cc: 8, allow_non_numeric_keys: false };
 
     function showError(msg) {
       toast.textContent = msg;
@@ -69,7 +102,118 @@
     }
 
     function updateSearchBtn() {
-      searchBtn.disabled = !(schoolEl.value && majorEl.value && termEl.value.trim());
+      searchBtn.disabled = !(schoolEl.value && majorEl.value && termEl.value.trim() && rowsExistForSelection);
+    }
+
+    function setStalenessBadge(text, isStale) {
+      stalenessBadgeEl.textContent = text;
+      stalenessBadgeEl.classList.toggle('stale', !!isStale);
+    }
+
+    function clearJobStatus() {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+      activeJobId = null;
+      jobStatusEl.classList.remove('loading');
+    }
+
+    async function pollJobStatus() {
+      if (!activeJobId) return;
+      try {
+        const res = await fetch('/api/ingest/status/' + encodeURIComponent(activeJobId));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const status = await res.json();
+        if (status.status === 'pending' || status.status === 'running') {
+          jobStatusEl.classList.add('loading');
+          jobStatusEl.textContent = 'Ingest ' + status.status + '...';
+          pollTimer = setTimeout(pollJobStatus, 3000);
+          return;
+        }
+
+        if (status.status === 'completed') {
+          clearJobStatus();
+          jobStatusEl.textContent = 'Ingest complete. Rows: ' + status.rows_written;
+          await loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
+          return;
+        }
+
+        clearJobStatus();
+        jobStatusEl.textContent = 'Ingest failed';
+        showError('Ingest failed: ' + (status.error_message || 'Unknown error'));
+      } catch (e) {
+        clearJobStatus();
+        showError('Failed to poll ingest status: ' + e.message);
+      }
+    }
+
+    async function refreshAssistData() {
+      clearError();
+      if (!(schoolEl.value && majorEl.value)) return;
+      refreshBtn.disabled = true;
+      jobStatusEl.classList.add('loading');
+      jobStatusEl.textContent = 'Starting ingest...';
+      try {
+        const res = await fetch('/api/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_school: schoolEl.value,
+            target_major: majorEl.value,
+            options: ingestDefaultOptions,
+          }),
+        });
+        const body = await res.json().catch(function() { return {}; });
+        if (!res.ok) throw new Error(body.detail || ('HTTP ' + res.status));
+        activeJobId = body.job_id;
+        pollTimer = setTimeout(pollJobStatus, 300);
+      } catch (e) {
+        clearJobStatus();
+        showError('Failed to start ingest: ' + e.message);
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    async function loadFreshnessAndUpdateUI(school, major) {
+      clearJobStatus();
+      rowsExistForSelection = false;
+      updateSearchBtn();
+      if (!(school && major)) {
+        ingestBar.style.display = 'none';
+        ingestOptionsEl.style.display = 'none';
+        setStalenessBadge('ASSIST: unknown', false);
+        return;
+      }
+
+      ingestBar.style.display = 'flex';
+      ingestOptionsEl.style.display = 'block';
+      setStalenessBadge('ASSIST: checking...', false);
+      try {
+        const params = new URLSearchParams({
+          school: school,
+          major: major,
+          max_cc: String(ingestDefaultOptions.max_cc),
+          allow_non_numeric_keys: String(ingestDefaultOptions.allow_non_numeric_keys),
+        });
+        const res = await fetch('/api/ingest/check?' + params.toString());
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const payload = await res.json();
+        rowsExistForSelection = !!payload.rows_exist;
+        if (!payload.rows_exist) {
+          setStalenessBadge('ASSIST: missing, refresh required', true);
+        } else if (payload.freshness) {
+          setStalenessBadge(
+            'ASSIST: ' + payload.freshness.staleness_label,
+            payload.freshness.staleness_seconds >= 86400
+          );
+        } else {
+          setStalenessBadge('ASSIST: unknown freshness', false);
+        }
+      } catch (e) {
+        setStalenessBadge('ASSIST: check failed', true);
+        showError('Failed to check ASSIST freshness: ' + e.message);
+      }
+      updateSearchBtn();
     }
 
     async function loadSchools() {
@@ -328,12 +472,27 @@
       clearError();
       majorEl.innerHTML = '<option value="">Select major…</option>';
       majorEl.disabled = true;
+      rowsExistForSelection = false;
+      ingestBar.style.display = 'none';
+      ingestOptionsEl.style.display = 'none';
       updateSearchBtn();
       if (schoolEl.value) loadMajors(schoolEl.value);
     });
 
-    majorEl.addEventListener('change', updateSearchBtn);
+    majorEl.addEventListener('change', function() {
+      clearError();
+      loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
+    });
     termEl.addEventListener('input', updateSearchBtn);
+    refreshBtn.addEventListener('click', refreshAssistData);
+    maxCcEl.addEventListener('change', function() {
+      ingestDefaultOptions.max_cc = parseInt(maxCcEl.value, 10) || 8;
+      loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
+    });
+    allowNonNumericEl.addEventListener('change', function() {
+      ingestDefaultOptions.allow_non_numeric_keys = !!allowNonNumericEl.checked;
+      loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
+    });
     statusEl.addEventListener('change', function() {
       renderResults(lastResults);
     });
@@ -353,6 +512,9 @@
         .then(function(res) {
           if (!res.ok) {
             return res.json().catch(function() { return {}; }).then(function(body) {
+              if (res.status === 409) {
+                throw new Error(body.detail || 'Run ASSIST ingest first.');
+              }
               throw new Error(body.detail || 'HTTP ' + res.status);
             });
           }

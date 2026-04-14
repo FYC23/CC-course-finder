@@ -21,6 +21,7 @@ def ingest_target_major(
     target_school: str,
     major_name: str,
     max_community_colleges: int | None = None,
+    allow_non_numeric_keys: bool = False,
     log: Callable[[str], None] | None = None,
 ) -> IngestRun:
     max_cc_label = (
@@ -149,6 +150,8 @@ def ingest_target_major(
         target_major=major_name,
         agreements_seen=len(refs),
         rows_written=0,
+        max_cc=max_community_colleges,
+        allow_non_numeric_keys=allow_non_numeric_keys,
     )
     save_run(db_path, run)
     inserted = save_rows(db_path, run.run_id, all_rows)
@@ -163,6 +166,8 @@ def ingest_target_major(
         target_major=run.target_major,
         agreements_seen=run.agreements_seen,
         rows_written=inserted,
+        max_cc=max_community_colleges,
+        allow_non_numeric_keys=allow_non_numeric_keys,
     )
     save_run(db_path, finalized)
     _emit(
