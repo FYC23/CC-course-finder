@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CC Course Finder</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <h1>CC Course Finder</h1>
+
+  <div id="error-toast"></div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="school">University</label>
+      <select id="school"><option value="">Loading…</option></select>
+    </div>
+    <div class="form-group">
+      <label for="major">Major</label>
+      <select id="major" disabled><option value="">Select university first</option></select>
+    </div>
+    <div class="form-group">
+      <label for="term">Term</label>
+      <input type="text" id="term" placeholder="Spring 2026" />
+    </div>
+    <div class="form-group">
+      <label for="requirement">Requirement filter (optional)</label>
+      <input type="text" id="requirement" placeholder="e.g. Area C" />
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <button id="search-btn" disabled>Search</button>
+    </div>
+  </div>
+
+  <div id="results-count"></div>
+  <div id="results-container"></div>
+
+  <script>
+    const schoolEl = document.getElementById('school');
+    const majorEl = document.getElementById('major');
+    const termEl = document.getElementById('term');
+    const reqEl = document.getElementById('requirement');
+    const searchBtn = document.getElementById('search-btn');
+    const toast = document.getElementById('error-toast');
+    const countEl = document.getElementById('results-count');
+    const container = document.getElementById('results-container');
+
+    function showError(msg) {
+      toast.textContent = msg;
+      toast.style.display = 'block';
+    }
+
+    function clearError() {
+      toast.style.display = 'none';
+      toast.textContent = '';
+    }
+
+    function updateSearchBtn() {
+      searchBtn.disabled = !(schoolEl.value && majorEl.value && termEl.value.trim());
+    }
+
+    async function loadSchools() {
+      try {
+        const res = await fetch('/api/schools');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const schools = await res.json();
+        schoolEl.innerHTML = '<option value="">Select university…</option>' +
+          schools.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('');
+      } catch (e) {
+        showError('Failed to load universities: ' + e.message);
+      }
+    }
+
+    async function loadMajors(school) {
+      majorEl.disabled = true;
+      majorEl.innerHTML = '<option value="">Loading…</option>';
+      try {
+        const res = await fetch('/api/majors?school=' + encodeURIComponent(school));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const majors = await res.json();
+        majorEl.innerHTML = '<option value="">Select major…</option>' +
+          majors.map(m => '<option value="' + esc(m) + '">' + esc(m) + '</option>').join('');
+        majorEl.disabled = false;
+      } catch (e) {
+        showError('Failed to load majors: ' + e.message);
+      }
+      updateSearchBtn();
+    }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function offeredBadge(offered) {
+      if (offered === null) return '<span class="badge badge-gray">Articulation only</span>';
+      if (offered) return '<span class="badge badge-green">Offered</span>';
+      return '<span class="badge badge-red">Not offered</span>';
+    }
+
+    function renderSections(sections) {
+      if (!sections.length) return '';
+      var rows = [];
+      for (var i = 0; i < sections.length; i++) {
+        var s = sections[i];
+        rows.push('<tr><td>' + esc(s.section_id) + '</td><td>' + esc(s.status) +
+          '</td><td>' + esc(s.modality) + '</td><td>' + esc(s.instructor) + '</td></tr>');
+      }
+      return '<details><summary>' + sections.length + ' section(s)</summary>' +
+        '<table class="sections-table">' +
+        '<thead><tr><th>Section</th><th>Status</th><th>Modality</th><th>Instructor</th></tr></thead>' +
+        '<tbody>' + rows.join('') + '</tbody></table></details>';
+    }
+
+    function renderResults(results) {
+      if (!results.length) {
+        container.innerHTML = '<p style="color:#555;margin-top:1rem">No results found.</p>';
+        countEl.textContent = '';
+        return;
+      }
+      countEl.textContent = results.length + ' course(s) found';
+      var rows = [];
+      for (var i = 0; i < results.length; i++) {
+        var r = results[i];
+        var reqs = r.target_requirements.map(function(req) {
+          return '<div>' + esc(req) + '</div>';
+        }).join('');
+        rows.push('<tr><td>' + esc(r.cc_name) + '</td><td><a href="' + esc(r.source_url) +
+          '" target="_blank" rel="noopener">' + esc(r.course_code) + '</a><br/><small>' +
+          esc(r.course_title) + '</small></td><td>' + esc(r.uc_equivalent) + '</td><td>' +
+          reqs + '</td><td>' + offeredBadge(r.offered_this_term) + '</td><td>' +
+          renderSections(r.sections) + '</td></tr>');
+      }
+      container.innerHTML = '<table><thead><tr>' +
+        '<th>CC</th><th>Course</th><th>UC Equivalent</th><th>Requirements</th><th>Offered?</th><th>Sections</th>' +
+        '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+    }
+
+    schoolEl.addEventListener('change', function() {
+      clearError();
+      majorEl.innerHTML = '<option value="">Select major…</option>';
+      majorEl.disabled = true;
+      updateSearchBtn();
+      if (schoolEl.value) loadMajors(schoolEl.value);
+    });
+
+    majorEl.addEventListener('change', updateSearchBtn);
+    termEl.addEventListener('input', updateSearchBtn);
+
+    searchBtn.addEventListener('click', function() {
+      clearError();
+      searchBtn.disabled = true;
+      searchBtn.textContent = 'Searching…';
+      container.innerHTML = '';
+      countEl.textContent = '';
+      var params = 'school=' + encodeURIComponent(schoolEl.value) +
+        '&major=' + encodeURIComponent(majorEl.value) +
+        '&term=' + encodeURIComponent(termEl.value.trim());
+      if (reqEl.value.trim()) params += '&requirement=' + encodeURIComponent(reqEl.value.trim());
+      fetch('/api/search?' + params)
+        .then(function(res) {
+          if (!res.ok) {
+            return res.json().catch(function() { return {}; }).then(function(body) {
+              throw new Error(body.detail || 'HTTP ' + res.status);
+            });
+          }
+          return res.json();
+        })
+        .then(function(data) { renderResults(data); })
+        .catch(function(e) { showError('Search failed: ' + e.message); })
+        .finally(function() {
+          searchBtn.disabled = false;
+          searchBtn.textContent = 'Search';
+          updateSearchBtn();
+        });
+    });
+
+    loadSchools();
+  </script>
+</body>
+</html>

@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 from src.assist.models import ArticulationRow, IngestRun
 from src.assist.store import ensure_db, save_rows, save_run
 from src.schedule import cli as schedule_cli
+from src.schedule.composite import CompositeProvider
 
 _RUNNER = CliRunner()
 _BASE_ARGS = [
@@ -98,7 +99,11 @@ def test_cli_returns_fail_soft_row_on_provider_request_error(monkeypatch, tmp_pa
         def search_course(self, *, source, term, course_code):
             raise requests.RequestException("network timeout")
 
-    monkeypatch.setattr(schedule_cli, "BannerEllucianProvider", _FailingProvider)
+    monkeypatch.setattr(
+        schedule_cli,
+        "build_composite_provider",
+        lambda: CompositeProvider([_FailingProvider()]),
+    )
     result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-id", "2"])
 
     assert result.exit_code == 0
@@ -112,7 +117,11 @@ def test_cli_rejects_unsupported_source_system(monkeypatch) -> None:
         def supports_source(self, source) -> bool:
             return False
 
-    monkeypatch.setattr(schedule_cli, "BannerEllucianProvider", _FakeProvider)
+    monkeypatch.setattr(
+        schedule_cli,
+        "build_composite_provider",
+        lambda: CompositeProvider([_FakeProvider()]),
+    )
     result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-id", "2"])
     assert result.exit_code == 2
     assert "No provider configured for source system='banner'" in result.output

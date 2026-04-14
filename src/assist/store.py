@@ -43,6 +43,12 @@ def ensure_db(path: Path) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_artic_school_major
+                ON articulation_rows (target_school, target_major)
+            """
+        )
 
 
 def save_run(path: Path, run: IngestRun) -> None:
@@ -139,4 +145,23 @@ def query_rows(
         )
         for r in records
     ]
+
+
+def query_schools(path: Path) -> list[str]:
+    """Return distinct target_school values, sorted."""
+    with sqlite3.connect(path) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT target_school FROM articulation_rows ORDER BY target_school ASC"
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def query_majors(path: Path, target_school: str) -> list[str]:
+    """Return distinct target_major values for a school, sorted."""
+    with sqlite3.connect(path) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT target_major FROM articulation_rows WHERE target_school = ? ORDER BY target_major ASC",
+            (target_school,),
+        ).fetchall()
+    return [r[0] for r in rows]
 

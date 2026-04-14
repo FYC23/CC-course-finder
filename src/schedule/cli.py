@@ -8,31 +8,9 @@ import typer
 
 from src.assist.config import DB_PATH
 
-from .banner_ellucian import BannerEllucianProvider
-from .banner_ssb_classic import BannerSsbClassicProvider
 from .catalog import find_college_source_by_name, get_college_source
-from .models import CollegeScheduleSource, CourseAvailability
-from .providers import ScheduleProvider
+from .composite import build_composite_provider
 from .service import ScheduleService
-from .term import ParsedTerm
-from .vsb_4cd import Vsb4cdProvider
-from .wvm_static import WvmStaticProvider
-
-
-class _CompositeProvider:
-    def __init__(self, providers: list[ScheduleProvider]) -> None:
-        self._providers = providers
-
-    def supports_source(self, source: CollegeScheduleSource) -> bool:
-        return any(p.supports_source(source) for p in self._providers)
-
-    def search_course(
-        self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str
-    ) -> CourseAvailability:
-        for p in self._providers:
-            if p.supports_source(source):
-                return p.search_course(source=source, term=term, course_code=course_code)
-        raise ValueError(f"No provider for system={source.system!r}")
 
 app = typer.Typer(help="Schedule layer query CLI.")
 
@@ -65,7 +43,7 @@ def query(
         typer.echo("Error: --cc-id and --cc-name are mutually exclusive.", err=True)
         raise typer.Exit(code=2)
 
-    provider = _CompositeProvider([BannerEllucianProvider(), BannerSsbClassicProvider(), WvmStaticProvider(), Vsb4cdProvider()])
+    provider = build_composite_provider()
     resolved_cc_id: int | None = None
 
     if cc_name:
