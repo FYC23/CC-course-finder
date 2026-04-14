@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
+from functools import partial
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
@@ -20,6 +22,27 @@ from src.assist.store import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+_ingest_futures: set[asyncio.Future[object]] = set()
+
+
+def _handle_ingest_future_done(job_id: str, future: asyncio.Future[object]) -> None:
+    _ingest_futures.discard(future)
+    if future.cancelled():
+        logger.warning("Ingest executor future was cancelled (job_id=%s).", job_id)
+        return
+    exc = future.exception()
+    if exc is not None:
+        logger.error(
+            "Unhandled ingest executor failure (job_id=%s).",
+            job_id,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+
+
+def _track_ingest_future(job_id: str, future: asyncio.Future[object]) -> None:
+    _ingest_futures.add(future)
+    future.add_done_callback(partial(_handle_ingest_future_done, job_id))
 
 
 class IngestOptions(BaseModel):
@@ -120,7 +143,7 @@ async def start_ingest(payload: IngestStartRequest) -> IngestStartResponse:
     from src.web.app import get_executor
 
     loop = asyncio.get_running_loop()
-    loop.run_in_executor(
+    future = loop.run_in_executor(
         get_executor(),
         run_ingest_job,
         job_id,
@@ -129,6 +152,7 @@ async def start_ingest(payload: IngestStartRequest) -> IngestStartResponse:
         payload.options.max_cc,
         payload.options.allow_non_numeric_keys,
     )
+    _track_ingest_future(job_id, future)
     return IngestStartResponse(job_id=job_id, message="Ingest job started.")
 
 

@@ -4,6 +4,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from src.assist.models import ArticulationRow, IngestRun
 from src.assist.store import (
     _find_active_job,
@@ -303,4 +305,38 @@ def test_ingest_runs_columns_backward_compat(tmp_path: Path) -> None:
             ("run-old",),
         ).fetchone()
     assert row == (8, 0)
+
+
+def test_ensure_db_enables_wal_mode(tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    ensure_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        mode = conn.execute("PRAGMA journal_mode").fetchone()
+    assert mode is not None
+    assert str(mode[0]).lower() == "wal"
+
+
+def test_create_job_retries_when_database_locked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    ensure_db(db_path)
+
+    import src.assist.store as store
+
+    real_connect = store.sqlite3.connect
+    attempts = {"count": 0}
+
+    def _flaky_connect(*args, **kwargs):  # type: ignore[no-untyped-def]
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(store.sqlite3, "connect", _flaky_connect)
+
+    create_job(db_path, "job-retry", "UCLA", "Computer Science", 8, False)
+    job = get_job(db_path, "job-retry")
+    assert attempts["count"] >= 2
+    assert job is not None
 

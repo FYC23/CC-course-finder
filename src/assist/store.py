@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from .config import DB_PATH
 from .models import ArticulationRow, IngestRun
+
+_SQLITE_TIMEOUT_SECONDS = 30
+_SQLITE_BUSY_TIMEOUT_MS = 30_000
+_WRITE_LOCK_RETRY_ATTEMPTS = 5
+_WRITE_LOCK_RETRY_DELAY_SECONDS = 0.05
+_T = TypeVar("_T")
 
 
 def _utc_now() -> str:
@@ -18,9 +25,38 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     return dict(row) if row is not None else None
 
 
+def _connect(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(path, timeout=_SQLITE_TIMEOUT_SECONDS)
+    conn.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
+    return conn
+
+
+def _is_locked_error(exc: sqlite3.OperationalError) -> bool:
+    return "database is locked" in str(exc).lower()
+
+
+def _with_write_retry(path: Path, operation: Callable[[sqlite3.Connection], _T]) -> _T:
+    last_exc: sqlite3.OperationalError | None = None
+    for attempt in range(_WRITE_LOCK_RETRY_ATTEMPTS):
+        try:
+            with _connect(path) as conn:
+                return operation(conn)
+        except sqlite3.OperationalError as exc:
+            if not _is_locked_error(exc):
+                raise
+            last_exc = exc
+            if attempt == _WRITE_LOCK_RETRY_ATTEMPTS - 1:
+                break
+            sleep_seconds = _WRITE_LOCK_RETRY_DELAY_SECONDS * (2**attempt)
+            time.sleep(sleep_seconds)
+    assert last_exc is not None
+    raise last_exc
+
+
 def ensure_db(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ingest_runs (
@@ -42,8 +78,9 @@ def ensure_db(path: Path) -> None:
         ]:
             try:
                 conn.execute(f"ALTER TABLE ingest_runs ADD COLUMN {column} {dtype}")
-            except sqlite3.OperationalError:
-                pass
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS articulation_rows (
@@ -121,7 +158,7 @@ def ensure_db(path: Path) -> None:
 
 
 def save_run(path: Path, run: IngestRun) -> None:
-    with sqlite3.connect(path) as conn:
+    def _write(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             INSERT OR REPLACE INTO ingest_runs (
@@ -141,10 +178,12 @@ def save_run(path: Path, run: IngestRun) -> None:
             ),
         )
 
+    _with_write_retry(path, _write)
+
 
 def save_rows(path: Path, run_id: str, rows: list[ArticulationRow]) -> int:
-    inserted = 0
-    with sqlite3.connect(path) as conn:
+    def _write(conn: sqlite3.Connection) -> int:
+        inserted = 0
         for row in rows:
             cursor = conn.execute(
                 """
@@ -172,7 +211,9 @@ def save_rows(path: Path, run_id: str, rows: list[ArticulationRow]) -> int:
                 ),
             )
             inserted += int(cursor.rowcount > 0)
-    return inserted
+        return inserted
+
+    return _with_write_retry(path, _write)
 
 
 def compute_options_hash(max_cc: int | None, allow_non_numeric_keys: bool) -> str:
@@ -182,7 +223,7 @@ def compute_options_hash(max_cc: int | None, allow_non_numeric_keys: bool) -> st
 
 
 def has_rows_for(path: Path, school: str, major: str) -> bool:
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
         row = conn.execute(
             """
             SELECT 1
@@ -204,7 +245,7 @@ def create_job(
     allow_non_numeric_keys: bool,
 ) -> None:
     now = _utc_now()
-    with sqlite3.connect(path) as conn:
+    def _write(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             INSERT INTO ingest_jobs (
@@ -223,6 +264,8 @@ def create_job(
             ),
         )
 
+    _with_write_retry(path, _write)
+
 
 def update_job(path: Path, job_id: str, **fields: Any) -> None:
     allowed = {
@@ -240,15 +283,17 @@ def update_job(path: Path, job_id: str, **fields: Any) -> None:
     values.append(_utc_now())
     values.append(job_id)
 
-    with sqlite3.connect(path) as conn:
+    def _write(conn: sqlite3.Connection) -> None:
         conn.execute(
             f"UPDATE ingest_jobs SET {', '.join(updates)} WHERE job_id = ?",
             values,
         )
 
+    _with_write_retry(path, _write)
+
 
 def get_job(path: Path, job_id: str) -> dict[str, Any] | None:
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT * FROM ingest_jobs WHERE job_id = ?",
@@ -258,7 +303,7 @@ def get_job(path: Path, job_id: str) -> dict[str, Any] | None:
 
 
 def _find_active_job(path: Path, school: str, major: str) -> dict[str, Any] | None:
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             """
@@ -282,7 +327,7 @@ def upsert_freshness(
     allow_non_numeric_keys: bool,
 ) -> None:
     del max_cc, allow_non_numeric_keys
-    with sqlite3.connect(path) as conn:
+    def _write(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             INSERT OR REPLACE INTO ingest_freshness (
@@ -306,11 +351,13 @@ def upsert_freshness(
             ),
         )
 
+    _with_write_retry(path, _write)
+
 
 def get_freshness(
     path: Path, school: str, major: str, options_hash: str
 ) -> dict[str, Any] | None:
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
         conn.row_factory = sqlite3.Row
         hashes = conn.execute(
             """
@@ -362,7 +409,7 @@ def query_rows(
         params.extend([like, like])
     sql += " ORDER BY cc_name ASC, course_code ASC"
 
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
         records = conn.execute(sql, params).fetchall()
 
     return [
@@ -387,7 +434,7 @@ def query_rows(
 
 def query_schools(path: Path) -> list[str]:
     """Return distinct target_school values, sorted."""
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
         rows = conn.execute(
             "SELECT DISTINCT target_school FROM articulation_rows ORDER BY target_school ASC"
         ).fetchall()
@@ -396,7 +443,7 @@ def query_schools(path: Path) -> list[str]:
 
 def query_majors(path: Path, target_school: str) -> list[str]:
     """Return distinct target_major values for a school, sorted."""
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
         rows = conn.execute(
             "SELECT DISTINCT target_major FROM articulation_rows WHERE target_school = ? ORDER BY target_major ASC",
             (target_school,),

@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from src.assist.config import DB_PATH
+from src.assist import config
 from src.assist.store import compute_options_hash, get_freshness, has_rows_for, query_rows
 from src.schedule.composite import build_composite_provider
 from src.schedule.service import ScheduleService
@@ -18,12 +18,15 @@ from ..join import join_results
 router = APIRouter()
 
 _service: ScheduleService | None = None
+_service_db_path = None
 
 
 def _get_service() -> ScheduleService:
-    global _service
-    if _service is None:
-        _service = ScheduleService(db_path=DB_PATH, provider=build_composite_provider())
+    global _service, _service_db_path
+    current_db_path = config.DB_PATH
+    if _service is None or _service_db_path != current_db_path:
+        _service = ScheduleService(db_path=current_db_path, provider=build_composite_provider())
+        _service_db_path = current_db_path
     return _service
 
 
@@ -41,7 +44,8 @@ async def search(
     except ValueError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
 
-    if not has_rows_for(DB_PATH, school, major):
+    db_path = config.DB_PATH
+    if not has_rows_for(db_path, school, major):
         raise HTTPException(
             status_code=409,
             detail=(
@@ -50,7 +54,7 @@ async def search(
             ),
         )
 
-    artic_rows = query_rows(DB_PATH, school, major, requirement)
+    artic_rows = query_rows(db_path, school, major, requirement)
 
     loop = asyncio.get_event_loop()
     service = _get_service()
@@ -72,7 +76,7 @@ async def search(
 
     results = join_results(artic_rows, schedule_results)
     default_options_hash = compute_options_hash(8, False)
-    freshness = get_freshness(DB_PATH, school, major, default_options_hash)
+    freshness = get_freshness(db_path, school, major, default_options_hash)
     if freshness is not None:
         ingested_at = datetime.fromisoformat(freshness["ingested_at_utc"])
         if ingested_at.tzinfo is None:

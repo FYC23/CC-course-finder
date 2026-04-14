@@ -85,6 +85,8 @@ class BannerSsbClassicProvider:
         sections: list[ParsedSection] = []
         page_offset = 0
         source_url = f"{base}/StudentRegistrationSsb/ssb/searchResults/searchResults"
+        total_count = 0
+        result_url = source_url
 
         while True:
             resp = self._session.get(
@@ -102,6 +104,7 @@ class BannerSsbClassicProvider:
                 },
                 timeout=20,
             )
+            result_url = str(resp.url)
             resp.raise_for_status()
             payload = resp.json()
             data = payload.get("data") or []
@@ -119,11 +122,11 @@ class BannerSsbClassicProvider:
                 )
 
             total = payload.get("totalCount") or 0
+            total_count = int(total or 0)
             page_offset += len(data)
             if page_offset >= total or not data:
                 break
 
-        total_count = payload.get("totalCount", 0)
         raw_summary = f"{len(sections)} section(s) found (totalCount={total_count})"
 
         return CourseAvailability(
@@ -133,6 +136,6 @@ class BannerSsbClassicProvider:
             course_code=course_code,
             offered=bool(sections),
             sections=sections,
-            source_url=resp.url,
+            source_url=result_url,
             raw_summary=raw_summary,
         )

@@ -188,3 +188,19 @@ def test_search_course_raises_for_wrong_system():
     term = parse_term_label("Summer 2026")
     with pytest.raises(ValueError, match="does not support"):
         p.search_course(source=_BANNER, term=term, course_code="MATH 1")
+
+
+def test_search_course_search_request_error_does_not_mask_exception():
+    s = MagicMock(spec=requests.Session)
+    s.headers = {}
+    s.get.side_effect = [
+        _make_resp(_TERMS),
+        _make_resp({}),
+        requests.RequestException("network down"),
+    ]
+    s.post.return_value = _make_resp({})
+    p = BannerSsbClassicProvider(session=s)
+    term = parse_term_label("Summer 2026")
+
+    with pytest.raises(requests.RequestException, match="network down"):
+        p.search_course(source=_MTSAC, term=term, course_code="MATH 181")

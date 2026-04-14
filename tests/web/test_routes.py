@@ -63,12 +63,14 @@ def client(seeded_db: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # Replace _service singleton so schedule always returns []
     import src.web.routers.search as search_router
     search_router._service = None
+    search_router._service_db_path = None
 
     class _EmptyService:
         def query(self, **_kwargs):  # type: ignore[no-untyped-def]
             return []
 
     search_router._service = _EmptyService()  # type: ignore[assignment]
+    search_router._service_db_path = seeded_db
 
     from src.web.app import app
     with TestClient(app) as c:
@@ -118,6 +120,9 @@ class TestSearch:
                 raise ValueError("No provider for system=banner")
 
         search_router._service = _RaiseService()  # type: ignore[assignment]
+        from src.assist import config
+
+        search_router._service_db_path = config.DB_PATH
 
         res = client.get("/api/search?school=UCLA&major=Computer+Science&term=Spring+2026")
         assert res.status_code == 422
@@ -128,3 +133,64 @@ class TestSearch:
         data = res.json()
         if data:
             assert data[0].get("offered_this_term") is None
+
+
+def test_search_uses_current_config_db_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    ensure_db(db_path)
+    _seed(db_path, ["TEST-UC-SEARCH"], ["Major A"])
+
+    from src.assist import config
+    import src.web.routers.search as search_router
+    from src.web.app import app
+
+    monkeypatch.setattr(config, "DB_PATH", db_path)
+    search_router._service = None
+    search_router._service_db_path = None
+
+    class _EmptyService:
+        def query(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return []
+
+    search_router._service = _EmptyService()  # type: ignore[assignment]
+    search_router._service_db_path = db_path
+
+    with TestClient(app) as client:
+        res = client.get("/api/search?school=TEST-UC-SEARCH&major=Major+A&term=Spring+2026")
+    assert res.status_code == 200
+
+
+def test_get_service_rebuilds_when_db_path_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import src.web.routers.search as search_router
+    from src.assist import config
+
+    path_a = tmp_path / "a.sqlite3"
+    path_b = tmp_path / "b.sqlite3"
+    created: list[Path] = []
+
+    class _FakeService:
+        def __init__(self, *, db_path: Path, provider: object) -> None:
+            created.append(db_path)
+            self.db_path = db_path
+            self.provider = provider
+
+        def query(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return []
+
+    monkeypatch.setattr(search_router, "ScheduleService", _FakeService)  # type: ignore[assignment]
+    monkeypatch.setattr(search_router, "build_composite_provider", lambda: object())
+
+    search_router._service = None
+    search_router._service_db_path = None
+    monkeypatch.setattr(config, "DB_PATH", path_a)
+    first = search_router._get_service()
+
+    monkeypatch.setattr(config, "DB_PATH", path_b)
+    second = search_router._get_service()
+
+    assert first is not second
+    assert created == [path_a, path_b]

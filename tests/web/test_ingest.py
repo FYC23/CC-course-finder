@@ -63,7 +63,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setattr(ingest_router, "DB_PATH", db_path)
     monkeypatch.setattr(schools_router, "DB_PATH", db_path)
-    monkeypatch.setattr(search_router, "DB_PATH", db_path)
 
     class _EmptyService:
         def query(self, **_kwargs):  # type: ignore[no-untyped-def]
@@ -241,3 +240,37 @@ def test_search_allowed_with_data(client: TestClient) -> None:
     res = client.get("/api/search?school=UCLA&major=Computer+Science&term=Spring+2026")
     assert res.status_code == 200
     assert "X-ASSIST-Staleness" in res.headers
+
+
+def test_start_ingest_logs_unhandled_executor_failure(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import src.web.routers.ingest as ingest_router
+
+    def _boom(
+        _job_id: str,
+        _school: str,
+        _major: str,
+        _max_cc: int | None,
+        _allow_non_numeric_keys: bool,
+    ) -> None:
+        raise RuntimeError("executor boom")
+
+    monkeypatch.setattr(ingest_router, "run_ingest_job", _boom)
+
+    with caplog.at_level("ERROR", logger="src.web.routers.ingest"):
+        res = client.post(
+            "/api/ingest",
+            json={"target_school": "UCLA", "target_major": "Computer Science"},
+        )
+        assert res.status_code == 200
+
+        start = time.time()
+        while time.time() - start < 2.0:
+            if any("Unhandled ingest executor failure" in rec.message for rec in caplog.records):
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("Expected unhandled executor failure log")
