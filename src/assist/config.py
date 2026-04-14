@@ -11,3 +11,6 @@ DATA_DIR = PROJECT_ROOT / "data"
 ARTIFACT_DIR = DATA_DIR / "assist_artifacts"
 DB_PATH = DATA_DIR / "assist.sqlite3"
 
+# Default cap for ingest: large enough to include typical pilot CC ordering on ASSIST.
+DEFAULT_MAX_CC = 100
+

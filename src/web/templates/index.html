@@ -54,7 +54,7 @@
     <div class="form-row" style="margin-top:0.5rem;">
       <div class="form-group">
         <label for="max-cc">Max community colleges</label>
-        <input type="number" id="max-cc" value="8" min="1" max="200" style="min-width:120px;" />
+        <input type="number" id="max-cc" value="100" min="1" max="200" style="min-width:120px;" />
       </div>
       <div class="form-group">
         <label style="text-transform:none; font-weight:normal;">
@@ -89,7 +89,7 @@
     var activeJobId = null;
     var pollTimer = null;
     var rowsExistForSelection = false;
-    var ingestDefaultOptions = { max_cc: 8, allow_non_numeric_keys: false };
+    var ingestDefaultOptions = { max_cc: 100, allow_non_numeric_keys: false };
 
     /** Calendar year of the Fall term that starts the active school year (July 1 rollover). */
     function schoolYearFallCalendarYear(d) {
@@ -535,7 +535,7 @@
     termEl.addEventListener('change', updateSearchBtn);
     refreshBtn.addEventListener('click', refreshAssistData);
     maxCcEl.addEventListener('change', function() {
-      ingestDefaultOptions.max_cc = parseInt(maxCcEl.value, 10) || 8;
+      ingestDefaultOptions.max_cc = parseInt(maxCcEl.value, 10) || 100;
       loadFreshnessAndUpdateUI(schoolEl.value, majorEl.value);
     });
     allowNonNumericEl.addEventListener('change', function() {

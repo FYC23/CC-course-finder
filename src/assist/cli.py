@@ -4,7 +4,7 @@ import json
 
 import typer
 
-from .config import DB_PATH
+from .config import DB_PATH, DEFAULT_MAX_CC
 from .discovery import AssistDiscovery
 from .fetch import ArtifactFetcher
 from .http import AssistHttpClient
@@ -34,7 +34,7 @@ def ingest(
         help="ASSIST API prefix. Override if ASSIST changes API routing.",
     ),
     max_cc: int = typer.Option(
-        8,
+        DEFAULT_MAX_CC,
         help=(
             "Max unique community colleges to ingest for this run "
             "(v1 safety guard)."

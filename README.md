@@ -28,7 +28,7 @@ First-time (required): ingest ASSIST articulation rows into `data/assist.sqlite3
 uv run python -m src.assist.cli ingest \
   --target-school "University of California, Los Angeles" \
   --target-major "Computer Science" \
-  --max-cc 8
+  --max-cc 100
 ```
 
 Run web UI (joins articulation + schedule availability).
@@ -139,7 +139,7 @@ Results UX notes:
 uv run python -m src.assist.cli ingest \
   --target-school "University of California, Los Angeles" \
   --target-major "Computer Science" \
-  --max-cc 8
+  --max-cc 100
 
 uv run python -m src.assist.cli query \
   --target-school "University of California, Los Angeles" \

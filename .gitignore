@@ -37,5 +37,5 @@ Thumbs.db
 data/assist.sqlite3
 data/assist_artifacts/
 
-# Vendored reference repos (clone locally; link from README)
+# Reference repos
 Reference projects/

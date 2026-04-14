@@ -9,7 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src.assist.config import DB_PATH
+from src.assist.config import DB_PATH, DEFAULT_MAX_CC
 from src.assist.service import run_ingest_job
 from src.assist.store import (
     _find_active_job,
@@ -46,7 +46,7 @@ def _track_ingest_future(job_id: str, future: asyncio.Future[object]) -> None:
 
 
 class IngestOptions(BaseModel):
-    max_cc: int | None = 8
+    max_cc: int | None = DEFAULT_MAX_CC
     allow_non_numeric_keys: bool = False
 
 
@@ -178,7 +178,7 @@ def ingest_status(job_id: str) -> IngestStatusResponse:
 def ingest_freshness(
     school: str = Query(...),
     major: str = Query(...),
-    max_cc: int | None = Query(default=8),
+    max_cc: int | None = Query(default=DEFAULT_MAX_CC),
     allow_non_numeric_keys: bool = Query(default=False),
 ) -> FreshnessData:
     ensure_db(DB_PATH)
@@ -197,7 +197,7 @@ def ingest_freshness(
 def ingest_check(
     school: str = Query(...),
     major: str = Query(...),
-    max_cc: int | None = Query(default=8),
+    max_cc: int | None = Query(default=DEFAULT_MAX_CC),
     allow_non_numeric_keys: bool = Query(default=False),
 ) -> IngestCheckResponse:
     ensure_db(DB_PATH)

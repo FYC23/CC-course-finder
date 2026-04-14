@@ -75,7 +75,7 @@ async def search(
         schedule_results = []
 
     results = join_results(artic_rows, schedule_results)
-    default_options_hash = compute_options_hash(8, False)
+    default_options_hash = compute_options_hash(config.DEFAULT_MAX_CC, False)
     freshness = get_freshness(db_path, school, major, default_options_hash)
     if freshness is not None:
         ingested_at = datetime.fromisoformat(freshness["ingested_at_utc"])

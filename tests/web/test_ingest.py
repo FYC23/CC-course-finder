@@ -25,7 +25,7 @@ def _seed_rows(db_path: Path, school: str, major: str) -> IngestRun:
         target_major=major,
         agreements_seen=1,
         rows_written=1,
-        max_cc=8,
+        max_cc=100,
         allow_non_numeric_keys=False,
     )
     save_run(db_path, run)
