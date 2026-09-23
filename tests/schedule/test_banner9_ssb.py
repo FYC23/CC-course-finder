@@ -317,3 +317,9 @@ def test_search_course_sections_carry_meetings():
     p = Banner9SsbProvider(session=s)
     result = p.search_course(source=_MTSAC, term=parse_term_label("Summer 2026"), course_code="MATH 180")
     assert result.sections[0].meetings[0].days == ("M", "W")
+
+
+def test_row_matches_campus_tolerates_null_meeting_time():
+    """TBA records have meetingTime: null; must not crash and row is kept."""
+    row = {**_ROW_ONLINE, "meetingsFaculty": [{"meetingTime": None}]}
+    assert _row_matches_campus(row, ("MS",)) is True

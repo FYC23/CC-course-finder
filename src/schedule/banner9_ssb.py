@@ -111,13 +111,15 @@ def _parse_row(row: dict) -> ParsedSection:
 
 
 def _row_matches_campus(row: dict, codes: tuple[str, ...]) -> bool:
-    """Keep rows whose meetings are at one of *codes*. Rows with no meetings are kept."""
+    """Keep rows with no campus information. Filter by campus codes if present."""
     if not codes:
         return True
     campuses = {
-        str(entry.get("meetingTime", {}).get("campus") or "").upper()
+        str(meeting_time.get("campus") or "").upper()
         for entry in row.get("meetingsFaculty") or []
         if isinstance(entry, dict)
+        for meeting_time in [entry.get("meetingTime")]
+        if isinstance(meeting_time, dict)
     }
     campuses.discard("")
     if not campuses:
