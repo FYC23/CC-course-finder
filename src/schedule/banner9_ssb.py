@@ -5,7 +5,8 @@ from urllib.parse import urlsplit
 
 import requests
 
-from .models import CollegeScheduleSource, CourseAvailability, ParsedSection
+from .models import CollegeScheduleSource, CourseAvailability, Meeting, ParsedSection
+from .normalize import days_from_flags, int_or_none, normalize_modality, parse_date, parse_hhmm
 from .term import ParsedTerm
 
 _PAGE_SIZE = 100
@@ -40,7 +41,96 @@ def _parse_course_code(course_code: str) -> tuple[str, str] | None:
     return m.group(1).upper(), m.group(2).upper()
 
 
-class BannerSsbClassicProvider:
+_DAY_KEYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_ONLINE_LOCATION_HINTS = ("online", "web", "internet", "distance")
+
+
+def _parse_meeting(meeting_time: dict) -> Meeting:
+    building = str(meeting_time.get("buildingDescription") or meeting_time.get("building") or "").strip()
+    room = str(meeting_time.get("room") or "").strip()
+    location = " ".join(part for part in (building, room) if part)
+    start = parse_hhmm(meeting_time.get("beginTime"))
+    end = parse_hhmm(meeting_time.get("endTime"))
+    looks_online = any(hint in location.lower() for hint in _ONLINE_LOCATION_HINTS)
+    is_online = looks_online or (start is None and not room)
+    return Meeting(
+        days=days_from_flags({k: meeting_time.get(k) for k in _DAY_KEYS}),
+        start_local=start,
+        end_local=end,
+        location=location,
+        is_online=is_online,
+        start_date=parse_date(meeting_time.get("startDate")),
+        end_date=parse_date(meeting_time.get("endDate")),
+    )
+
+
+def _meetings_of(row: dict) -> tuple[Meeting, ...]:
+    out: list[Meeting] = []
+    for entry in row.get("meetingsFaculty") or []:
+        meeting_time = entry.get("meetingTime") if isinstance(entry, dict) else None
+        if isinstance(meeting_time, dict):
+            out.append(_parse_meeting(meeting_time))
+    return tuple(out)
+
+
+def _status_of(row: dict) -> str:
+    seats = int_or_none(row.get("seatsAvailable"))
+    wait_capacity = int_or_none(row.get("waitCapacity")) or 0
+    if not row.get("openSection"):
+        return "closed"
+    if seats is not None and seats <= 0:
+        return "waitlist" if wait_capacity > 0 else "closed"
+    return "open"
+
+
+def _instructor_of(row: dict) -> str:
+    names = [
+        str(f.get("displayName")).strip()
+        for f in row.get("faculty") or []
+        if isinstance(f, dict) and f.get("displayName")
+    ]
+    return ", ".join(names)
+
+
+def _parse_row(row: dict) -> ParsedSection:
+    meetings = _meetings_of(row)
+    method = row.get("instructionalMethodDescription") or row.get("instructionalMethod") or ""
+    subject = str(row.get("subject") or "").strip()
+    number = str(row.get("courseNumber") or "").strip()
+    return ParsedSection(
+        section_id=str(row.get("courseReferenceNumber", "")),
+        status=_status_of(row),
+        modality=normalize_modality(raw_tokens=[str(method)], meetings=meetings),
+        title=str(row.get("courseTitle", "")),
+        instructor=_instructor_of(row),
+        meetings=meetings,
+        seats_total=int_or_none(row.get("maximumEnrollment")),
+        seats_used=int_or_none(row.get("enrollment")),
+        course_code_as_listed=f"{subject} {number}".strip(),
+    )
+
+
+def _row_matches_campus(row: dict, codes: tuple[str, ...]) -> bool:
+    """Keep rows whose meetings are at one of *codes*. Rows with no meetings are kept."""
+    if not codes:
+        return True
+    campuses = {
+        str(entry.get("meetingTime", {}).get("campus") or "").upper()
+        for entry in row.get("meetingsFaculty") or []
+        if isinstance(entry, dict)
+    }
+    campuses.discard("")
+    if not campuses:
+        return True
+    return any(c in campuses for c in codes)
+
+
+def _campus_codes(source: CollegeScheduleSource) -> tuple[str, ...]:
+    raw = source.params.get("campus_codes", "")
+    return tuple(code.strip().upper() for code in raw.split(",") if code.strip())
+
+
+class Banner9SsbProvider:
     def __init__(self, session: requests.Session | None = None) -> None:
         self._session = session or requests.Session()
         self._session.headers.setdefault(
@@ -57,7 +147,7 @@ class BannerSsbClassicProvider:
     ) -> CourseAvailability:
         if not self.supports_source(source):
             raise ValueError(
-                f"BannerSsbClassicProvider does not support system={source.system!r}"
+                f"Banner9SsbProvider does not support system={source.system!r}"
             )
 
         base = _base_root(source.base_url)
@@ -109,17 +199,11 @@ class BannerSsbClassicProvider:
             payload = resp.json()
             data = payload.get("data") or []
 
+            codes = _campus_codes(source)
             for row in data:
-                status = "open" if row.get("openSection") else "closed"
-                sections.append(
-                    ParsedSection(
-                        section_id=str(row.get("courseReferenceNumber", "")),
-                        status=status,
-                        modality="unknown",
-                        title=str(row.get("courseTitle", "")),
-                        instructor="",
-                    )
-                )
+                if not isinstance(row, dict) or not _row_matches_campus(row, codes):
+                    continue
+                sections.append(_parse_row(row))
 
             total = payload.get("totalCount") or 0
             total_count = int(total or 0)

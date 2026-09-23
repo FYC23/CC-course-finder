@@ -1,11 +1,11 @@
-"""Tests for BannerSsbClassicProvider."""
+"""Tests for Banner9SsbProvider."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 import pytest
 import requests
 
-from src.schedule.banner_ssb_classic import BannerSsbClassicProvider, _resolve_term_code
+from src.schedule.banner9_ssb import Banner9SsbProvider, _resolve_term_code
 from src.schedule.models import CollegeScheduleSource
 from src.schedule.term import parse_term_label
 
@@ -81,12 +81,12 @@ def _make_session(terms=_TERMS, search=_SEARCH_TWO):
 # supports_source
 # ---------------------------------------------------------------------------
 
-def test_supports_banner_ssb_classic():
-    assert BannerSsbClassicProvider().supports_source(_MTSAC)
+def test_supports_banner9_ssb():
+    assert Banner9SsbProvider().supports_source(_MTSAC)
 
 
 def test_rejects_banner_system():
-    assert not BannerSsbClassicProvider().supports_source(_BANNER)
+    assert not Banner9SsbProvider().supports_source(_BANNER)
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ def test_resolve_term_code_not_found():
 
 def test_search_course_returns_sections():
     s = _make_session()
-    p = BannerSsbClassicProvider(session=s)
+    p = Banner9SsbProvider(session=s)
     term = parse_term_label("Summer 2026")
     result = p.search_course(source=_MTSAC, term=term, course_code="MATH 181")
     assert result.offered is True
@@ -137,7 +137,7 @@ def test_search_course_empty_returns_not_offered():
     s = _make_session(search=_SEARCH_EMPTY)
     # get calls: termSelection, getTerms, search
     s.get.side_effect = [_make_resp(_TERMS), _make_resp({}), _make_resp(_SEARCH_EMPTY)]
-    p = BannerSsbClassicProvider(session=s)
+    p = Banner9SsbProvider(session=s)
     term = parse_term_label("Summer 2026")
     result = p.search_course(source=_MTSAC, term=term, course_code="MATH 999")
     assert result.offered is False
@@ -146,7 +146,7 @@ def test_search_course_empty_returns_not_offered():
 
 def test_search_course_sets_cc_metadata():
     s = _make_session()
-    p = BannerSsbClassicProvider(session=s)
+    p = Banner9SsbProvider(session=s)
     term = parse_term_label("Summer 2026")
     result = p.search_course(source=_MTSAC, term=term, course_code="MATH 181")
     assert result.cc_id == 62
@@ -169,7 +169,7 @@ def test_term_code_cached_across_calls():
         _make_resp({}),          # termSelection call 2 (no getTerms — cached)
         _make_resp(_SEARCH_TWO), # search call 2
     ]
-    p = BannerSsbClassicProvider(session=s)
+    p = Banner9SsbProvider(session=s)
     term = parse_term_label("Summer 2026")
     p.search_course(source=_MTSAC, term=term, course_code="MATH 181")
     p.search_course(source=_MTSAC, term=term, course_code="MATH 182")
@@ -184,7 +184,7 @@ def test_term_code_cached_across_calls():
 # ---------------------------------------------------------------------------
 
 def test_search_course_raises_for_wrong_system():
-    p = BannerSsbClassicProvider()
+    p = Banner9SsbProvider()
     term = parse_term_label("Summer 2026")
     with pytest.raises(ValueError, match="does not support"):
         p.search_course(source=_BANNER, term=term, course_code="MATH 1")
@@ -199,8 +199,121 @@ def test_search_course_search_request_error_does_not_mask_exception():
         requests.RequestException("network down"),
     ]
     s.post.return_value = _make_resp({})
-    p = BannerSsbClassicProvider(session=s)
+    p = Banner9SsbProvider(session=s)
     term = parse_term_label("Summer 2026")
 
     with pytest.raises(requests.RequestException, match="network down"):
         p.search_course(source=_MTSAC, term=term, course_code="MATH 181")
+
+
+# ---------------------------------------------------------------------------
+# Row parsing: meetings, faculty, seats, modality, campus filter
+# ---------------------------------------------------------------------------
+
+from datetime import date, time  # noqa: E402
+
+from src.schedule.banner9_ssb import _parse_meeting, _parse_row, _row_matches_campus  # noqa: E402
+from src.schedule.models import CollegeScheduleSource as _Src  # noqa: E402
+
+_ROW_IN_PERSON = {
+    "courseReferenceNumber": "21216", "subject": "MATH", "courseNumber": "180",
+    "subjectCourse": "MATH180", "courseTitle": "Calculus and Analytic Geometry",
+    "openSection": True, "seatsAvailable": -4, "maximumEnrollment": 40, "enrollment": 36,
+    "waitCapacity": 10, "waitCount": 4,
+    "instructionalMethod": "02", "instructionalMethodDescription": "Lecture and/or Discussion",
+    "campusDescription": "Mt. San Antonio College",
+    "faculty": [{"displayName": "Nguyen, Bao-Chi T", "primaryIndicator": True}],
+    "meetingsFaculty": [{"meetingTime": {
+        "beginTime": "0730", "endTime": "0935", "building": "61", "buildingDescription": "Bldg 61",
+        "room": "2306", "campus": "MS", "startDate": "08/24/2026", "endDate": "12/13/2026",
+        "monday": True, "tuesday": False, "wednesday": True, "thursday": False,
+        "friday": False, "saturday": False, "sunday": False, "meetingType": "CLAS"}}],
+}
+
+_ROW_ONLINE = {
+    "courseReferenceNumber": "22001", "subject": "MATH", "courseNumber": "180",
+    "subjectCourse": "MATH180", "courseTitle": "Calculus and Analytic Geometry",
+    "openSection": True, "seatsAvailable": 5, "maximumEnrollment": 40, "enrollment": 35,
+    "waitCapacity": 0, "waitCount": 0,
+    "instructionalMethod": "OL", "instructionalMethodDescription": "Online",
+    "campusDescription": "Mt. San Antonio College",
+    "faculty": [],
+    "meetingsFaculty": [{"meetingTime": {
+        "beginTime": None, "endTime": None, "building": None, "buildingDescription": None,
+        "room": None, "campus": "MS", "startDate": "08/24/2026", "endDate": "12/13/2026",
+        "monday": False, "tuesday": False, "wednesday": False, "thursday": False,
+        "friday": False, "saturday": False, "sunday": False, "meetingType": "CLAS"}}],
+}
+
+
+def test_parse_meeting_in_person():
+    m = _parse_meeting(_ROW_IN_PERSON["meetingsFaculty"][0]["meetingTime"])
+    assert m.days == ("M", "W")
+    assert m.start_local == time(7, 30)
+    assert m.end_local == time(9, 35)
+    assert m.location == "Bldg 61 2306"
+    assert m.is_online is False
+    assert m.start_date == date(2026, 8, 24)
+    assert m.end_date == date(2026, 12, 13)
+
+
+def test_parse_meeting_online_has_no_times():
+    m = _parse_meeting(_ROW_ONLINE["meetingsFaculty"][0]["meetingTime"])
+    assert m.days == ()
+    assert m.start_local is None
+    assert m.is_online is True
+
+
+def test_parse_row_in_person():
+    s = _parse_row(_ROW_IN_PERSON)
+    assert s.section_id == "21216"
+    assert s.title == "Calculus and Analytic Geometry"
+    assert s.instructor == "Nguyen, Bao-Chi T"
+    assert s.modality == "in_person"
+    assert s.status == "waitlist"          # open flag but no seats and a waitlist
+    assert s.seats_total == 40
+    assert s.seats_used == 36
+    assert s.course_code_as_listed == "MATH 180"
+    assert len(s.meetings) == 1
+
+
+def test_parse_row_online_async():
+    s = _parse_row(_ROW_ONLINE)
+    assert s.modality == "async_online"
+    assert s.status == "open"
+    assert s.instructor == ""
+
+
+def test_parse_row_closed_when_not_open_and_no_waitlist():
+    row = {**_ROW_ONLINE, "openSection": False, "seatsAvailable": 0, "waitCapacity": 0}
+    assert _parse_row(row).status == "closed"
+
+
+def test_row_matches_campus_by_meeting_campus_code():
+    assert _row_matches_campus(_ROW_IN_PERSON, ("MS",)) is True
+    assert _row_matches_campus(_ROW_IN_PERSON, ("BB", "BC")) is False
+
+
+def test_row_matches_campus_keeps_rows_without_meetings():
+    row = {**_ROW_ONLINE, "meetingsFaculty": []}
+    assert _row_matches_campus(row, ("XX",)) is True
+
+
+def test_search_course_applies_campus_filter_from_params():
+    from types import MappingProxyType
+    src = _Src(
+        cc_id=84, cc_name="Bakersfield College", system="banner9_ssb",
+        base_url="https://reg-prod.ec.kccd.edu", locations=(),
+        params=MappingProxyType({"campus_codes": "BB,BC"}),
+    )
+    s = _make_session(search={"totalCount": 2, "data": [_ROW_IN_PERSON, {**_ROW_ONLINE, "meetingsFaculty": [{"meetingTime": {**_ROW_ONLINE["meetingsFaculty"][0]["meetingTime"], "campus": "BB"}}]}]})
+    p = Banner9SsbProvider(session=s)
+    result = p.search_course(source=src, term=parse_term_label("Summer 2026"), course_code="MATH 180")
+    assert [x.section_id for x in result.sections] == ["22001"]
+
+
+def test_search_course_sections_carry_meetings():
+    s = _make_session(search={"totalCount": 1, "data": [_ROW_IN_PERSON]})
+    p = Banner9SsbProvider(session=s)
+    result = p.search_course(source=_MTSAC, term=parse_term_label("Summer 2026"), course_code="MATH 180")
+    assert result.sections[0].meetings[0].days == ("M", "W")
