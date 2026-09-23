@@ -142,6 +142,91 @@ def _campus_codes(source: CollegeScheduleSource) -> tuple[str, ...]:
     return tuple(code.strip().upper() for code in raw.split(",") if code.strip())
 
 
+_ALNUM_ONLY_RE = re.compile(r"[^A-Za-z0-9]")
+_NUMBER_PREFIX_RE = re.compile(r"^(\d*)(.*)$")
+
+
+def _normalize_course_number(value: str) -> str:
+    """Uppercase, strip non-alphanumerics, and drop leading zeros from the digit prefix
+    so '005A' and '5A' compare equal."""
+    cleaned = _ALNUM_ONLY_RE.sub("", value).upper()
+    digits, rest = _NUMBER_PREFIX_RE.match(cleaned).groups()
+    if digits:
+        digits = digits.lstrip("0") or "0"
+    return f"{digits}{rest}"
+
+
+def _row_matches_requested_course(row: dict, *, subject: str, number: str) -> bool:
+    """Keep the row if no course number was requested (subject-only search), or if the
+    row's subject/courseNumber match the requested course. Comparison is case-insensitive
+    and ignores non-alphanumeric characters."""
+    if not number:
+        return True
+    row_subject = _ALNUM_ONLY_RE.sub("", str(row.get("subject") or "")).upper()
+    row_number = str(row.get("courseNumber") or "")
+    return (
+        row_subject == _ALNUM_ONLY_RE.sub("", subject).upper()
+        and _normalize_course_number(row_number) == _normalize_course_number(number)
+    )
+
+
+def _fetch_all_sections(
+    *,
+    session: requests.Session,
+    source_url: str,
+    source: CollegeScheduleSource,
+    subject: str,
+    number: str,
+    term_code: str,
+) -> tuple[list[ParsedSection], int, str]:
+    """Page through the SSB search-results endpoint, filtering rows by campus and by the
+    requested course. Returns (sections, totalCount, last result URL)."""
+    sections: list[ParsedSection] = []
+    page_offset = 0
+    total_count = 0
+    result_url = source_url
+    codes = _campus_codes(source)
+
+    while True:
+        resp = session.get(
+            source_url,
+            params={
+                "txt_subject": subject,
+                "txt_courseNumber": number,
+                "txt_term": term_code,
+                "startDatepicker": "",
+                "endDatepicker": "",
+                "pageOffset": page_offset,
+                "pageMaxSize": _PAGE_SIZE,
+                "sortColumn": "subjectDescription",
+                "sortDirection": "asc",
+            },
+            timeout=20,
+        )
+        result_url = str(resp.url)
+        resp.raise_for_status()
+        payload = resp.json()
+        if not isinstance(payload, dict):
+            raise requests.RequestException(
+                f"Unexpected non-object search response from {result_url}"
+            )
+        data = payload.get("data") or []
+
+        for row in data:
+            if not isinstance(row, dict) or not _row_matches_campus(row, codes):
+                continue
+            if not _row_matches_requested_course(row, subject=subject, number=number):
+                continue
+            sections.append(_parse_row(row))
+
+        total_count = int_or_none(payload.get("totalCount")) or 0
+        page_offset += len(data)
+        if page_offset >= total_count or not data:
+            break
+
+    return sections, total_count, result_url
+
+
 class Banner9SsbProvider:
     def __init__(self, session: requests.Session | None = None) -> None:
         self._session = session or requests.Session()
@@ -184,47 +269,15 @@ class Banner9SsbProvider:
             timeout=20,
         )
 
-        sections: list[ParsedSection] = []
-        page_offset = 0
         source_url = f"{base}/StudentRegistrationSsb/ssb/searchResults/searchResults"
-        total_count = 0
-        result_url = source_url
-
-        while True:
-            resp = self._session.get(
-                source_url,
-                params={
-                    "txt_subject": subject,
-                    "txt_courseNumber": number,
-                    "txt_term": term_code,
-                    "startDatepicker": "",
-                    "endDatepicker": "",
-                    "pageOffset": page_offset,
-                    "pageMaxSize": _PAGE_SIZE,
-                    "sortColumn": "subjectDescription",
-                    "sortDirection": "asc",
-                },
-                timeout=20,
-            )
-            result_url = str(resp.url)
-            resp.raise_for_status()
-            payload = resp.json()
-            if not isinstance(payload, dict):
-                raise requests.RequestException(
-                    f"Unexpected non-object search response from {result_url}"
-                )
-            data = payload.get("data") or []
-
-            codes = _campus_codes(source)
-            for row in data:
-                if not isinstance(row, dict) or not _row_matches_campus(row, codes):
-                    continue
-                sections.append(_parse_row(row))
-
-            total_count = int_or_none(payload.get("totalCount")) or 0
-            page_offset += len(data)
-            if page_offset >= total_count or not data:
-                break
+        sections, total_count, result_url = _fetch_all_sections(
+            session=self._session,
+            source_url=source_url,
+            source=source,
+            subject=subject,
+            number=number,
+            term_code=term_code,
+        )
 
         raw_summary = f"{len(sections)} section(s) found (totalCount={total_count})"
 

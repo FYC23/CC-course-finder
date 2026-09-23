@@ -356,6 +356,45 @@ def test_search_course_accepts_string_total_count():
     assert "totalCount=2" in result.raw_summary
 
 
+def test_search_course_drops_rows_for_a_different_course_number():
+    """Requesting MATH 180 must not also return MATH 181 rows the search endpoint
+    happens to include."""
+    other_course_row = {**_SEARCH_TWO["data"][0], "courseNumber": "181"}
+    s = _make_session(search={"totalCount": 2, "data": [_ROW_IN_PERSON, other_course_row]})
+    p = Banner9SsbProvider(session=s)
+    result = p.search_course(source=_MTSAC, term=parse_term_label("Summer 2026"), course_code="MATH 180")
+    assert [x.section_id for x in result.sections] == ["21216"]
+
+
+def test_search_course_matches_leading_zero_padded_course_number():
+    """'MATH 005A' should still match a courseNumber of '5A'."""
+    row = {
+        "courseReferenceNumber": "99999",
+        "subject": "MATH",
+        "courseNumber": "5A",
+        "courseTitle": "Test Course",
+        "seatsAvailable": 5,
+        "openSection": True,
+    }
+    s = _make_session(search={"totalCount": 1, "data": [row]})
+    p = Banner9SsbProvider(session=s)
+    result = p.search_course(source=_MTSAC, term=parse_term_label("Summer 2026"), course_code="MATH 005A")
+    assert [x.section_id for x in result.sections] == ["99999"]
+
+
+def test_row_matches_requested_course_keeps_all_rows_when_no_number_requested():
+    """A subject-only search (empty requested number, e.g. _parse_course_code returned
+    None) must not filter out any row by course number."""
+    from src.schedule.banner9_ssb import _row_matches_requested_course
+
+    assert _row_matches_requested_course(
+        {"subject": "MATH", "courseNumber": "181"}, subject="MATH", number=""
+    )
+    assert _row_matches_requested_course(
+        {"subject": "MATH", "courseNumber": "005A"}, subject="MATH", number=""
+    )
+
+
 def test_row_matches_campus_tolerates_null_meeting_time():
     """TBA records have meetingTime: null; must not crash and row is kept."""
     row = {**_ROW_ONLINE, "meetingsFaculty": [{"meetingTime": None}]}
