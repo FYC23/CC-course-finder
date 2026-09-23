@@ -116,6 +116,34 @@ def test_resolve_term_code_prefers_exact_label_over_continuing_ed():
     assert code == "2026SU"
 
 
+def test_resolve_term_code_matches_reordered_description():
+    """Hartnell/Ohlone-style description: "2026 Fall Semester" with year before season."""
+    session = MagicMock(spec=requests.Session)
+    session.post.return_value = _resp(
+        {"TermFilters": [{"Value": "2026FA", "Description": "2026 Fall Semester"}]}
+    )
+    code = resolve_term_code(
+        session, "https://example.edu", parse_term_label("Fall 2026"), keyword="MATH 1", headers={}
+    )
+    assert code == "2026FA"
+
+
+def test_resolve_term_code_prefers_semester_over_noncredit_variant():
+    """Napa-style TermFilters list a noncredit variant after the regular semester term.
+    Both only match on season+year tokens (rank 3), so the first entry in list order wins."""
+    session = MagicMock(spec=requests.Session)
+    session.post.return_value = _resp(
+        {"TermFilters": [
+            {"Value": "26/FA", "Description": "Fall Semester 2026"},
+            {"Value": "26/NCFA", "Description": "Fall Noncredit 2026"},
+        ]}
+    )
+    code = resolve_term_code(
+        session, "https://example.edu", parse_term_label("Fall 2026"), keyword="MATH 1", headers={}
+    )
+    assert code == "26/FA"
+
+
 def test_resolve_term_code_matches_label_prefix_when_no_exact_entry():
     """A description like "Fall 2026 Regular" has no exact match for the "Fall 2026" label,
     but starts with the label followed by whitespace, so it must still resolve."""

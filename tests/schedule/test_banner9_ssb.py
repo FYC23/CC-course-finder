@@ -117,6 +117,33 @@ def test_resolve_term_code_not_found():
         _resolve_term_code(s, "https://prodrg.mtsac.edu", term)
 
 
+def test_resolve_term_code_matches_season_and_year_tokens():
+    """Feather River-style description embeds the term inside a longer descriptive string:
+    "Fall Term 2026 202710 12-AUG-2026 - 09-DEC-2026". No exact or prefix match exists, so
+    this falls back to matching the season word and year as separate tokens."""
+    s = MagicMock(spec=requests.Session)
+    s.get.return_value = _make_resp(
+        [{"code": "202710", "description": "Fall Term 2026 202710 12-AUG-2026 - 09-DEC-2026"}]
+    )
+    term = parse_term_label("Fall 2026")
+    code = _resolve_term_code(s, "https://prodrg.mtsac.edu", term)
+    assert code == "202710"
+
+
+def test_resolve_term_code_exact_beats_token_only_match():
+    """An earlier token-only match (rank 3) must lose to a later exact match (rank 0)."""
+    s = MagicMock(spec=requests.Session)
+    s.get.return_value = _make_resp(
+        [
+            {"code": "111", "description": "Fall Term 2026 202710 12-AUG-2026 - 09-DEC-2026"},
+            {"code": "202710", "description": "Fall 2026"},
+        ]
+    )
+    term = parse_term_label("Fall 2026")
+    code = _resolve_term_code(s, "https://prodrg.mtsac.edu", term)
+    assert code == "202710"
+
+
 # ---------------------------------------------------------------------------
 # search_course — happy path
 # ---------------------------------------------------------------------------

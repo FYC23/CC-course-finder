@@ -7,7 +7,7 @@ import requests
 
 from .models import CollegeScheduleSource, CourseAvailability, Meeting, ParsedSection
 from .normalize import days_from_flags, int_or_none, normalize_modality, parse_date, parse_hhmm
-from .term import ParsedTerm
+from .term import ParsedTerm, term_match_rank
 
 _PAGE_SIZE = 100
 _COURSE_CODE_RE = re.compile(r"^\s*([A-Za-z]+)\s*[- ]?\s*([A-Za-z0-9]+)\s*$")
@@ -26,11 +26,16 @@ def _resolve_term_code(session: requests.Session, base: str, term: ParsedTerm) -
     url = f"{base}/StudentRegistrationSsb/ssb/classSearch/getTerms"
     resp = session.get(url, params={"searchTerm": "", "offset": 1, "max": 50}, timeout=20)
     resp.raise_for_status()
-    needle = term.label.lower()
+    best: tuple[int, str] | None = None
     for entry in resp.json():
-        desc = _VIEW_ONLY_RE.sub("", entry.get("description", "")).strip().lower()
-        if desc == needle:
-            return str(entry["code"])
+        desc = _VIEW_ONLY_RE.sub("", entry.get("description", "")).strip()
+        rank = term_match_rank(term, desc)
+        if rank is None:
+            continue
+        if best is None or rank < best[0]:
+            best = (rank, str(entry["code"]))
+    if best is not None:
+        return best[1]
     raise ValueError(f"Term {term.label!r} not found in SSB term list at {base}")
 
 

@@ -22,6 +22,8 @@ def test_suggest_term_format():
     assert suggest_term_format("2026F", "Fall 2026") == "{yyyy}{SEASON1}"
     assert suggest_term_format("26/FA", "Fall 2026") == "{yy}/{SEASON2}"
     assert suggest_term_format("FA26", "Fall 2026") is None
+    assert suggest_term_format("2026/FA", "Fall Semester 2026") == "{yyyy}/{SEASON2}"
+    assert suggest_term_format("2026FA", "2026 Fall Semester") == "{yyyy}{SEASON2}"
 
 
 def test_discover_collects_terms_locations_and_format():

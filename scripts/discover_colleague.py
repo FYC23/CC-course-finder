@@ -19,15 +19,23 @@ from src.schedule.colleague_selfservice import extract_request_token
 _UA = "Mozilla/5.0 (compatible; cc-course-finder discovery; +https://github.com/FYC23/CC-course-finder)"
 _SEASON2 = {"fall": "FA", "spring": "SP", "summer": "SU"}
 _SEASON1 = {"fall": "F", "spring": "S", "summer": "U"}
+_SEASON_RE = re.compile(r"\b(Spring|Summer|Fall)\b", re.IGNORECASE)
+_YEAR_RE = re.compile(r"\b(\d{4})\b")
 
 
 def suggest_term_format(value: str, description: str) -> str | None:
-    """Infer a `term_format` template from one (code, label) pair, or None if no template fits."""
-    match = re.match(r"^(Spring|Summer|Fall)\s+(\d{4})", description, re.IGNORECASE)
-    if not match:
+    """Infer a `term_format` template from one (code, label) pair, or None if no template fits.
+
+    The season word and the 4-digit year can appear anywhere in ``description``, in either
+    order (e.g. "Fall Semester 2026" or "2026 Fall Semester"), not only as a leading
+    "Season YYYY" prefix.
+    """
+    season_match = _SEASON_RE.search(description)
+    year_match = _YEAR_RE.search(description)
+    if not season_match or not year_match:
         return None
-    season = match.group(1).lower()
-    year = match.group(2)
+    season = season_match.group(1).lower()
+    year = year_match.group(1)
     candidates = {
         "{yyyy}{SEASON2}": f"{year}{_SEASON2[season]}",
         "{yyyy}/{SEASON2}": f"{year}/{_SEASON2[season]}",
