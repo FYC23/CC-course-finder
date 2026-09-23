@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import time
 from pathlib import Path
 
 import requests
@@ -10,6 +11,7 @@ from src.assist.models import ArticulationRow, IngestRun
 from src.assist.store import ensure_db, save_rows, save_run
 from src.schedule import cli as schedule_cli
 from src.schedule.composite import CompositeProvider
+from src.schedule.models import CourseAvailability, Meeting, ParsedSection
 
 _RUNNER = CliRunner()
 _BASE_ARGS = [
@@ -110,6 +112,57 @@ def test_cli_returns_fail_soft_row_on_provider_request_error(monkeypatch, tmp_pa
     payload = json.loads(result.output)
     assert payload[0]["offered"] is False
     assert payload[0]["raw_summary"] == "[request_error type=RequestException]"
+
+
+def test_cli_serializes_meeting_times_as_json(monkeypatch, tmp_path: Path) -> None:
+    """Regression: Meeting gained datetime.time/date fields, so the plain
+    json.dumps([asdict(row) for row in rows]) call raised
+    TypeError: Object of type time is not JSON serializable for any real result."""
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_row(db_path)
+    monkeypatch.setattr(schedule_cli, "DB_PATH", db_path)
+
+    section = ParsedSection(
+        section_id="123",
+        status="open",
+        modality="in_person",
+        title="Calculus II",
+        instructor="Ada Lovelace",
+        meetings=(
+            Meeting(
+                days=("M", "W"),
+                start_local=time(10, 45),
+                end_local=time(12, 0),
+                location="Room 1",
+            ),
+        ),
+    )
+
+    class _StubProvider:
+        def supports_source(self, source) -> bool:
+            return True
+
+        def search_course(self, *, source, term, course_code):
+            return CourseAvailability(
+                cc_id=source.cc_id,
+                cc_name=source.cc_name,
+                term=term.label,
+                course_code=course_code,
+                offered=True,
+                sections=[section],
+                source_url="https://example.edu",
+            )
+
+    monkeypatch.setattr(
+        schedule_cli,
+        "build_composite_provider",
+        lambda: CompositeProvider([_StubProvider()]),
+    )
+    result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-id", "2"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload[0]["sections"][0]["meetings"][0]["start_local"] == "10:45:00"
 
 
 def test_cli_rejects_unsupported_source_system(monkeypatch) -> None:
