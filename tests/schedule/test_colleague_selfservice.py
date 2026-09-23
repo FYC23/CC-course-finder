@@ -149,3 +149,34 @@ def test_search_filters_by_location_match_when_locations_empty():
     result = ColleagueSelfServiceProvider(session=session).search_course(
         source=src, term=parse_term_label("Fall 2026"), course_code="MATH 25")
     assert [s.section_id for s in result.sections] == ["1"]
+
+
+def test_bootstrap_clears_stale_token_when_next_college_has_none():
+    """Regression: the session (and provider) is reused across colleges. A college whose
+    bootstrap page carries no anti-forgery token must not keep sending the previous
+    college's token."""
+    src_a = CollegeScheduleSource(
+        cc_id=90, cc_name="College A", system="colleague_selfservice",
+        base_url="https://colss-a.example.edu", locations=(),
+        params=MappingProxyType({"term_format": "{yyyy}{SEASON2}"}),
+    )
+    src_b = CollegeScheduleSource(
+        cc_id=91, cc_name="College B", system="colleague_selfservice",
+        base_url="https://colss-b.example.edu", locations=(),
+        params=MappingProxyType({"term_format": "{yyyy}{SEASON2}"}),
+    )
+    session = MagicMock(spec=requests.Session)
+    session.headers = {}
+    session.get.side_effect = [_resp({}, text=_HTML), _resp({}, text="<html></html>")]
+    matching_section = {
+        "Synonym": "1", "CourseName": "MATH-25", "Title": "Calc", "AvailabilityStatusDisplay": "Open",
+        "Course": {"SubjectCode": "MATH", "Number": "25"}, "FormattedMeetingTimes": [],
+    }
+    session.post.return_value = _resp({"TotalPages": 1, "Sections": [matching_section]})
+    provider = ColleagueSelfServiceProvider(session=session)
+
+    provider.search_course(source=src_a, term=parse_term_label("Fall 2026"), course_code="MATH 25")
+    assert session.headers["__RequestVerificationToken"] == "CfDJ8ABC"
+
+    provider.search_course(source=src_b, term=parse_term_label("Fall 2026"), course_code="MATH 25")
+    assert "__RequestVerificationToken" not in session.headers

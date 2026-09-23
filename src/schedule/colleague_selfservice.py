@@ -116,6 +116,11 @@ class ColleagueSelfServiceProvider:
         token = extract_request_token(response.text)
         if token:
             self._session.headers["__RequestVerificationToken"] = token
+        else:
+            # The session (and this provider) is reused across colleges. Without this, a
+            # college whose bootstrap page carries no token would keep serving requests
+            # under the previous college's stale anti-forgery token.
+            self._session.headers.pop("__RequestVerificationToken", None)
         for key, value in _JSON_HEADERS.items():
             self._session.headers.setdefault(key, value)
 

@@ -123,9 +123,13 @@ def test_pilot_provider_uses_json_search_and_parses_sections() -> None:
     # term-code resolution to a separate POST against TermFilters), so that assertion is dropped.
     assert session.calls[0][1]["locations"] == "EVC"
     assert session.calls[0][1]["keyword"] == "MATH 1B"
-    # calls[1] is now the term-resolution POST (CatalogListing/TermFilters); the section
-    # listing POST shifted to calls[2].
+    # calls[1] is the term-resolution POST (CatalogListing/TermFilters, no term_format set on
+    # this source's params).
+    assert session.calls[1][1]["searchResultsView"] == "CatalogListing"
+    # calls[2] is the section listing POST, and it must carry the term code resolved from
+    # TermFilters ("2026SU") rather than a hardcoded/derived one.
     assert session.calls[2][1]["searchResultsView"] == "SectionListing"
+    assert session.calls[2][1]["terms"] == str(["2026SU"])
 
 
 def test_pilot_provider_falls_back_to_sections_endpoint_when_needed() -> None:
