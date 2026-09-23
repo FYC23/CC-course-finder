@@ -22,18 +22,45 @@ def to_student_local(
     return student_dt.time().replace(tzinfo=None), day_shift
 
 
-def _meeting_fits(
-    meeting: Meeting, *, student_utc_offset_minutes: int, window_start_hour: int, window_end_hour: int
+def _fits_on_date(
+    start_local: time,
+    end_local: time,
+    on_date: date,
+    campus_tz: str,
+    *,
+    student_utc_offset_minutes: int,
+    window_start_hour: int,
+    window_end_hour: int,
 ) -> bool:
-    assert meeting.start_local is not None and meeting.end_local is not None
-    on_date = meeting.start_date or date.today()
-    start, start_shift = to_student_local(meeting.start_local, on_date, meeting.timezone, student_utc_offset_minutes)
-    end, end_shift = to_student_local(meeting.end_local, on_date, meeting.timezone, student_utc_offset_minutes)
+    start, start_shift = to_student_local(start_local, on_date, campus_tz, student_utc_offset_minutes)
+    end, end_shift = to_student_local(end_local, on_date, campus_tz, student_utc_offset_minutes)
     if start_shift != end_shift:
         return False
     window_start = time(window_start_hour, 0)
     window_end = time(window_end_hour, 0) if window_end_hour < 24 else time(23, 59, 59)
     return window_start <= start and end <= window_end
+
+
+def _meeting_fits(
+    meeting: Meeting, *, student_utc_offset_minutes: int, window_start_hour: int, window_end_hour: int
+) -> bool:
+    if meeting.start_local is None or meeting.end_local is None:
+        raise ValueError("meeting has no start/end time")
+    dates = [meeting.start_date or date.today()]
+    if meeting.end_date is not None and meeting.end_date != dates[0]:
+        dates.append(meeting.end_date)
+    return all(
+        _fits_on_date(
+            meeting.start_local,
+            meeting.end_local,
+            on_date,
+            meeting.timezone,
+            student_utc_offset_minutes=student_utc_offset_minutes,
+            window_start_hour=window_start_hour,
+            window_end_hour=window_end_hour,
+        )
+        for on_date in dates
+    )
 
 
 def classify_fit(

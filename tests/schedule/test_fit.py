@@ -73,3 +73,23 @@ def test_any_conflicting_meeting_conflicts():
 def test_pacific_student_fits_by_identity():
     m = Meeting(days=("M",), start_local=time(14, 0), end_local=time(15, 30), start_date=PDT)
     assert classify_fit(_section(meetings=[m]), student_utc_offset_minutes=-420) == "fits"
+
+
+def test_dst_change_across_term_conflicts():
+    # 16:00-17:30 campus-local, term spans PDT (start_date) through PST (end_date).
+    # In PDT it's 07:00-08:30 China, before the window; in PST it's 08:00-09:30, which fits.
+    # Since it must fit on both ends, the mismatch makes it "conflicts".
+    m = Meeting(days=("M",), start_local=time(16, 0), end_local=time(17, 30),
+                start_date=PDT, end_date=PST)
+    assert classify_fit(_section(meetings=[m]), student_utc_offset_minutes=CHINA) == "conflicts"
+
+
+def test_same_times_without_dst_crossing_fits():
+    # Same campus-local times, but only evaluated on the PST date (no end_date/no DST switch).
+    m = Meeting(days=("M",), start_local=time(16, 0), end_local=time(17, 30), start_date=PST)
+    assert classify_fit(_section(meetings=[m]), student_utc_offset_minutes=CHINA) == "fits"
+
+
+def test_no_start_date_uses_today_fallback_and_fits():
+    m = Meeting(days=("M",), start_local=time(12, 0), end_local=time(13, 0))
+    assert classify_fit(_section(meetings=[m]), student_utc_offset_minutes=-420) == "fits"
