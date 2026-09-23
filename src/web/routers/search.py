@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
@@ -15,6 +16,8 @@ from src.schedule.term import parse_term_label
 
 from ..join import join_results
 from ..serialize import section_to_dict
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -75,6 +78,13 @@ async def search(
     except ValueError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
     except Exception:
+        logger.exception(
+            "Schedule query failed for school=%r major=%r term=%r cc_id=%r",
+            school,
+            major,
+            term,
+            cc_id,
+        )
         schedule_results = []
 
     results = join_results(artic_rows, schedule_results)

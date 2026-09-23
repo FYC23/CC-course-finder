@@ -191,6 +191,37 @@ def test_schedule_service_fail_soft_on_request_error(tmp_path: Path) -> None:
     assert out[0].raw_summary == "[request_error type=RequestException]"
 
 
+def test_schedule_service_contains_one_colleges_unexpected_exception(tmp_path: Path) -> None:
+    """A bug in one college's adapter (e.g. an AttributeError from malformed portal JSON)
+    must not blank out results for every other college in the same query."""
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_assist_rows(db_path)
+
+    class _OneCollegeBlowsUp(_FakeProvider):
+        def search_course(self, *, source, term, course_code: str) -> CourseAvailability:
+            if source.cc_id == 2:
+                raise AttributeError("'NoneType' object has no attribute 'get'")
+            return super().search_course(source=source, term=term, course_code=course_code)
+
+    provider = _OneCollegeBlowsUp()
+    service = ScheduleService(db_path=db_path, provider=provider)
+    out = service.query(
+        target_school="University of California, Los Angeles",
+        target_major="Computer Science",
+        term_label="Summer 2026",
+        cc_id=None,
+        requirement_filter="MATH 31",
+    )
+
+    assert len(out) == 2
+    by_cc_id = {item.cc_id: item for item in out}
+    assert by_cc_id[2].offered is False
+    assert "AttributeError" in by_cc_id[2].raw_summary
+    # cc_id=80 never raised, so it went through the normal (non-error) path.
+    assert by_cc_id[80].raw_summary == "fixture"
+    assert "AttributeError" not in by_cc_id[80].raw_summary
+
+
 def test_query_skips_unsupported_colleges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import json
     from src.schedule import catalog

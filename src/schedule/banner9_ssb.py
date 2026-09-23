@@ -26,8 +26,13 @@ def _resolve_term_code(session: requests.Session, base: str, term: ParsedTerm) -
     url = f"{base}/StudentRegistrationSsb/ssb/classSearch/getTerms"
     resp = session.get(url, params={"searchTerm": "", "offset": 1, "max": 50}, timeout=20)
     resp.raise_for_status()
+    payload = resp.json()
+    if not isinstance(payload, list):
+        raise ValueError(f"SSB term list at {base} was not a JSON array")
     best: tuple[int, str] | None = None
-    for entry in resp.json():
+    for entry in payload:
+        if not isinstance(entry, dict) or "code" not in entry:
+            continue
         desc = _VIEW_ONLY_RE.sub("", entry.get("description", "")).strip()
         rank = term_match_rank(term, desc)
         if rank is None:
@@ -204,6 +209,10 @@ class Banner9SsbProvider:
             result_url = str(resp.url)
             resp.raise_for_status()
             payload = resp.json()
+            if not isinstance(payload, dict):
+                raise requests.RequestException(
+                    f"Unexpected non-object search response from {result_url}"
+                )
             data = payload.get("data") or []
 
             codes = _campus_codes(source)
@@ -212,10 +221,9 @@ class Banner9SsbProvider:
                     continue
                 sections.append(_parse_row(row))
 
-            total = payload.get("totalCount") or 0
-            total_count = int(total or 0)
+            total_count = int_or_none(payload.get("totalCount")) or 0
             page_offset += len(data)
-            if page_offset >= total or not data:
+            if page_offset >= total_count or not data:
                 break
 
         raw_summary = f"{len(sections)} section(s) found (totalCount={total_count})"

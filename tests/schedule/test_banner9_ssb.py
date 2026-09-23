@@ -346,6 +346,16 @@ def test_search_course_sections_carry_meetings():
     assert result.sections[0].meetings[0].days == ("M", "W")
 
 
+def test_search_course_accepts_string_total_count():
+    """Some portals serialize totalCount as a numeric string; it must not crash on
+    int() conversion or on the int/str comparison that ends pagination."""
+    s = _make_session(search={"totalCount": "2", "data": _SEARCH_TWO["data"]})
+    p = Banner9SsbProvider(session=s)
+    result = p.search_course(source=_MTSAC, term=parse_term_label("Summer 2026"), course_code="MATH 181")
+    assert result.offered is True
+    assert "totalCount=2" in result.raw_summary
+
+
 def test_row_matches_campus_tolerates_null_meeting_time():
     """TBA records have meetingTime: null; must not crash and row is kept."""
     row = {**_ROW_ONLINE, "meetingsFaculty": [{"meetingTime": None}]}

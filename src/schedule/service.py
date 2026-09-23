@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
-
-import requests
 
 from .catalog import get_college_source
 from .models import CourseAvailability
 from .providers import ScheduleProvider
 from .term import parse_term_label
+
+logger = logging.getLogger(__name__)
 
 
 class ScheduleService:
@@ -60,7 +61,12 @@ class ScheduleService:
                 availability = self._provider.search_course(
                     source=source, term=term, course_code=course_code
                 )
-            except (requests.RequestException, ValueError) as err:
+            except Exception as err:
+                logger.exception(
+                    "Schedule lookup failed for cc_id=%s course_code=%r",
+                    source.cc_id,
+                    course_code,
+                )
                 availability = CourseAvailability(
                     cc_id=source.cc_id,
                     cc_name=source.cc_name,

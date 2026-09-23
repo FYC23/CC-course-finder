@@ -349,7 +349,7 @@ def _parse_section_listing(
     sections: list[ParsedSection] = []
     unknown = 0
     dropped_nonmatch = 0
-    for raw_section in payload.get("Sections", []):
+    for raw_section in payload.get("Sections") or []:
         if not isinstance(raw_section, dict):
             continue
         match_status = _classify_catalog_match(
@@ -386,7 +386,7 @@ def _fetch_sections_from_catalog(
     unknown = 0
     dropped_nonmatch = 0
     section_calls = 0
-    for course in payload.get("CourseFullModels", []):
+    for course in payload.get("CourseFullModels") or []:
         if section_calls >= _MAX_CATALOG_SECTION_CALLS:
             break
         if not isinstance(course, dict):
@@ -443,10 +443,10 @@ def _parse_sections_response(
     out: list[ParsedSection] = []
     unknown = 0
     dropped_nonmatch = 0
-    for term_entry in sections_retrieved.get("TermsAndSections", []):
+    for term_entry in sections_retrieved.get("TermsAndSections") or []:
         if not isinstance(term_entry, dict):
             continue
-        for wrapped in term_entry.get("Sections", []):
+        for wrapped in term_entry.get("Sections") or []:
             if not isinstance(wrapped, dict):
                 continue
             section_body = wrapped.get("Section")

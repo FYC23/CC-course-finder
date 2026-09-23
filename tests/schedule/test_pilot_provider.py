@@ -638,6 +638,91 @@ def test_banner_provider_passes_location_token_to_requests() -> None:
     assert "WVC" in session.calls[2][1]["locations"]
 
 
+def test_pilot_provider_handles_null_sections_and_null_course_full_models() -> None:
+    """ASP.NET serializes an empty collection as JSON null, not []. Both
+    "Sections": null (SectionListing) and "CourseFullModels": null (CatalogListing)
+    must resolve to no results instead of crashing on `None` iteration."""
+    source = get_college_source(2)
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            )
+        ],
+        post_responses=[
+            _term_filters_response(),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"Sections": None},
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"CourseFullModels": None},
+            ),
+        ],
+    )
+    provider = ColleagueSelfServiceProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="BIOLOGY!"
+    )
+
+    assert out.offered is False
+    assert out.sections == []
+
+
+def test_pilot_provider_handles_null_terms_and_sections_in_catalog_fallback() -> None:
+    """The Sections endpoint response can also carry null for TermsAndSections, or for
+    Sections within a term entry -- both must resolve to no sections, not a crash."""
+    source = get_college_source(2)
+    catalog_listing_payload = {
+        "CourseFullModels": [
+            {
+                "Id": "course-1",
+                "MatchingSectionIds": ["sec-1"],
+                "Course": {"SubjectCode": "MATH", "Number": "067"},
+            }
+        ]
+    }
+    session = _FakeSession(
+        get_responses=[
+            _FakeResponse(
+                text="bootstrap",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Search",
+            )
+        ],
+        post_responses=[
+            _term_filters_response(),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj={"Sections": None},
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/PostSearchCriteria",
+                json_obj=catalog_listing_payload,
+            ),
+            _FakeResponse(
+                text="",
+                url="https://colss-prod.ec.sjeccd.edu/Student/Courses/Sections",
+                json_obj={"SectionsRetrieved": {"TermsAndSections": None}},
+            ),
+        ],
+    )
+    provider = ColleagueSelfServiceProvider(session=session)
+
+    out = provider.search_course(
+        source=source, term=parse_term_label("Summer 2026"), course_code="BIOLOGY!"
+    )
+
+    assert out.offered is False
+    assert out.sections == []
+
+
 def test_pilot_provider_rejects_unsupported_source_system() -> None:
     source = CollegeScheduleSource(
         cc_id=999,
