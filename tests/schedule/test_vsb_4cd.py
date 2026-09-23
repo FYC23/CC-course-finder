@@ -138,10 +138,10 @@ def test_search_course_returns_sections():
     assert len(result.sections) == 2
     assert result.sections[0].section_id == "7011"
     assert result.sections[0].status == "open"
-    assert result.sections[0].modality == "in-person"
+    assert result.sections[0].modality == "in_person"
     assert result.sections[1].section_id == "7407"
     assert result.sections[1].status == "closed"
-    assert result.sections[1].modality == "online"
+    assert result.sections[1].modality == "unknown"
 
 
 def test_search_course_empty_returns_not_offered():

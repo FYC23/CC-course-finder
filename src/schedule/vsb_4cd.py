@@ -13,8 +13,9 @@ from .term import ParsedTerm
 _BASE_URL = "https://vsb.4cd.edu"
 _TERM_SUFFIXES = {"spring": "30", "summer": "10", "fall": "20"}
 
-# instruction mode codes from VSB
-_IM_MAP = {"01": "online", "02": "hybrid", "03": "in-person"}
+# instruction mode codes from VSB. "01" (online) is left as "unknown" because VSB does not
+# say whether the online instruction is synchronous or asynchronous, and adapters never guess.
+_IM_MAP = {"01": "unknown", "02": "hybrid", "03": "in_person"}
 
 
 def _term_code(term: ParsedTerm) -> str:
