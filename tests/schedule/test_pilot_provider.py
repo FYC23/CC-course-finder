@@ -124,8 +124,11 @@ def test_pilot_provider_uses_json_search_and_parses_sections() -> None:
     assert session.calls[0][1]["locations"] == "EVC"
     assert session.calls[0][1]["keyword"] == "MATH 1B"
     # calls[1] is the term-resolution POST (CatalogListing/TermFilters, no term_format set on
-    # this source's params).
+    # this source's params). TermFilters are search facets that depend on the keyword -- a
+    # course-specific keyword can omit terms a real course is offered in, so term resolution
+    # always uses an empty keyword to get the full term list.
     assert session.calls[1][1]["searchResultsView"] == "CatalogListing"
+    assert session.calls[1][1]["keyword"] == ""
     # calls[2] is the section listing POST, and it must carry the term code resolved from
     # TermFilters ("2026SU") rather than a hardcoded/derived one.
     assert session.calls[2][1]["searchResultsView"] == "SectionListing"

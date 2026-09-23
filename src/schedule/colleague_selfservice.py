@@ -140,7 +140,6 @@ class ColleagueSelfServiceProvider:
         term: ParsedTerm,
         *,
         source: CollegeScheduleSource,
-        keyword: str,
         headers: dict[str, str],
     ) -> str:
         fmt = source.params.get("term_format")
@@ -148,8 +147,11 @@ class ColleagueSelfServiceProvider:
             return format_term_code(term, fmt)
         cache_key = (base_root, term.label)
         if cache_key not in self._term_cache:
+            # TermFilters are search facets that depend on the keyword (a real course can
+            # omit some terms, and a nonsense keyword returns none at all), so resolving the
+            # term list always uses an empty keyword to get the full, unfiltered list.
             self._term_cache[cache_key] = resolve_term_code(
-                self._session, base_root, term, keyword=keyword, headers=headers
+                self._session, base_root, term, keyword="", headers=headers
             )
         return self._term_cache[cache_key]
 
@@ -170,9 +172,7 @@ class ColleagueSelfServiceProvider:
         locations = source.locations
         location_match = source.params.get("location_match", "").strip().lower()
         headers = self._bootstrap(bootstrap_url, course_code=course_code, locations=locations)
-        term_code = self._term_code(
-            base_root, term, source=source, keyword=course_code, headers=headers
-        )
+        term_code = self._term_code(base_root, term, source=source, headers=headers)
 
         last_response: requests.Response | None = None
         last_stats = _MatchStats()
