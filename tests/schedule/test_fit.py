@@ -30,6 +30,18 @@ def test_no_meetings_is_unknown():
     assert classify_fit(_section(), student_utc_offset_minutes=CHINA) == "unknown"
 
 
+def test_no_meetings_async_online_is_async():
+    """A section with async_online modality but no meeting rows at all (the portal never
+    sent one) should still classify as async, not unknown."""
+    s = _section(modality="async_online", meetings=[])
+    assert classify_fit(s, student_utc_offset_minutes=CHINA) == "async"
+
+
+def test_no_meetings_non_async_modality_is_unknown():
+    s = _section(modality="hybrid", meetings=[])
+    assert classify_fit(s, student_utc_offset_minutes=CHINA) == "unknown"
+
+
 def test_untimed_online_is_async():
     s = _section(modality="async_online", meetings=[Meeting(is_online=True)])
     assert classify_fit(s, student_utc_offset_minutes=CHINA) == "async"

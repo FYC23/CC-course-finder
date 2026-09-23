@@ -71,7 +71,7 @@ def classify_fit(
     window_end_hour: int = 23,
 ) -> str:
     if not section.meetings:
-        return FIT_UNKNOWN
+        return FIT_ASYNC if section.modality == "async_online" else FIT_UNKNOWN
     timed = [m for m in section.meetings if m.is_timed]
     if not timed:
         all_online = all(m.is_online for m in section.meetings)
