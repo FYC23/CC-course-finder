@@ -194,3 +194,50 @@ def test_get_service_rebuilds_when_db_path_changes(
 
     assert first is not second
     assert created == [path_a, path_b]
+
+
+def test_search_accepts_utc_offset_and_returns_fit(client, monkeypatch):
+    from datetime import date, time
+
+    from src.schedule.models import CourseAvailability, Meeting, ParsedSection
+    from src.web.routers import search as search_router
+
+    class _Svc:
+        def query(self, **kwargs):
+            return [CourseAvailability(
+                cc_id=2, cc_name="Test CC", term="Fall 2026", course_code="CS 1", offered=True,
+                sections=[ParsedSection(
+                    section_id="9", status="open", modality="in_person", title="T", instructor="",
+                    meetings=(Meeting(days=("M",), start_local=time(6, 30), end_local=time(8, 0),
+                                      start_date=date(2026, 8, 24)),))],
+                source_url="https://example.edu")]
+
+    monkeypatch.setattr(search_router, "_get_service", lambda: _Svc())
+    res = client.get("/api/search", params={"school": "UCLA", "major": "Computer Science",
+                                            "term": "Fall 2026", "utc_offset": 480})
+    assert res.status_code == 200
+    section = res.json()[0]["sections"][0]
+    assert section["fit"] == "fits"
+    assert section["meetings"][0]["start_local"] == "06:30"
+
+
+def test_search_without_utc_offset_has_null_fit(client, monkeypatch):
+    from src.schedule.models import CourseAvailability, ParsedSection
+    from src.web.routers import search as search_router
+
+    class _Svc:
+        def query(self, **kwargs):
+            return [CourseAvailability(cc_id=2, cc_name="Test CC", term="Fall 2026", course_code="CS 1",
+                                       offered=True, sections=[ParsedSection("9", "open", "unknown", "T", "")],
+                                       source_url="https://example.edu")]
+
+    monkeypatch.setattr(search_router, "_get_service", lambda: _Svc())
+    res = client.get("/api/search", params={"school": "UCLA", "major": "Computer Science", "term": "Fall 2026"})
+    assert res.status_code == 200
+    assert res.json()[0]["sections"][0]["fit"] is None
+
+
+def test_search_rejects_absurd_utc_offset(client):
+    res = client.get("/api/search", params={"school": "UCLA", "major": "Computer Science",
+                                            "term": "Fall 2026", "utc_offset": 5000})
+    assert res.status_code == 422

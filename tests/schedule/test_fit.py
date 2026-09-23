@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+from datetime import date, time
+
+from src.schedule.fit import classify_fit, to_student_local
+from src.schedule.models import Meeting, ParsedSection
+
+
+def _section(modality="in_person", meetings=()) -> ParsedSection:
+    return ParsedSection(section_id="1", status="open", modality=modality, title="T", instructor="",
+                         meetings=tuple(meetings))
+
+
+PDT = date(2026, 8, 24)   # UTC-7
+PST = date(2026, 12, 1)   # UTC-8
+CHINA = 480               # UTC+8
+
+
+def test_to_student_local_pdt():
+    # 07:30 PDT = 14:30 UTC = 22:30 China
+    assert to_student_local(time(7, 30), PDT, "America/Los_Angeles", CHINA) == (time(22, 30), 0)
+
+
+def test_to_student_local_pst_crosses_midnight():
+    # 18:00 PST = 02:00 UTC next day = 10:00 China next day
+    assert to_student_local(time(18, 0), PST, "America/Los_Angeles", CHINA) == (time(10, 0), 1)
+
+
+def test_no_meetings_is_unknown():
+    assert classify_fit(_section(), student_utc_offset_minutes=CHINA) == "unknown"
+
+
+def test_untimed_online_is_async():
+    s = _section(modality="async_online", meetings=[Meeting(is_online=True)])
+    assert classify_fit(s, student_utc_offset_minutes=CHINA) == "async"
+
+
+def test_untimed_in_person_is_unknown():
+    s = _section(modality="in_person", meetings=[Meeting(location="TBA")])
+    assert classify_fit(s, student_utc_offset_minutes=CHINA) == "unknown"
+
+
+def test_morning_pacific_fits_china_evening():
+    # 06:30-08:00 PDT = 21:30-23:00 China, inside the default 08..23 window
+    m = Meeting(days=("M",), start_local=time(6, 30), end_local=time(8, 0), start_date=PDT)
+    assert classify_fit(_section(meetings=[m]), student_utc_offset_minutes=CHINA) == "fits"
+
+
+def test_meeting_ending_past_student_midnight_conflicts():
+    # 07:30-09:00 PDT = 22:30-00:00 China; the end crosses midnight, so it conflicts
+    m = Meeting(days=("M",), start_local=time(7, 30), end_local=time(9, 0), start_date=PDT)
+    assert classify_fit(_section(meetings=[m]), student_utc_offset_minutes=CHINA) == "conflicts"
+
+
+def test_afternoon_pacific_conflicts_china_night():
+    m = Meeting(days=("M",), start_local=time(14, 0), end_local=time(15, 30), start_date=PDT)
+    assert classify_fit(_section(meetings=[m]), student_utc_offset_minutes=CHINA) == "conflicts"
+
+
+def test_custom_window():
+    m = Meeting(days=("M",), start_local=time(14, 0), end_local=time(15, 30), start_date=PDT)
+    # 14:00 PDT = 05:00 China; allow 5..23
+    assert classify_fit(_section(meetings=[m]), student_utc_offset_minutes=CHINA,
+                        window_start_hour=5, window_end_hour=23) == "fits"
+
+
+def test_any_conflicting_meeting_conflicts():
+    ok = Meeting(days=("M",), start_local=time(6, 30), end_local=time(8, 0), start_date=PDT)
+    bad = Meeting(days=("W",), start_local=time(14, 0), end_local=time(15, 0), start_date=PDT)
+    assert classify_fit(_section(meetings=[ok, bad]), student_utc_offset_minutes=CHINA) == "conflicts"
+
+
+def test_pacific_student_fits_by_identity():
+    m = Meeting(days=("M",), start_local=time(14, 0), end_local=time(15, 30), start_date=PDT)
+    assert classify_fit(_section(meetings=[m]), student_utc_offset_minutes=-420) == "fits"

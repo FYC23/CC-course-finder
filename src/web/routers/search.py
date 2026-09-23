@@ -14,6 +14,7 @@ from src.schedule.service import ScheduleService
 from src.schedule.term import parse_term_label
 
 from ..join import join_results
+from ..serialize import section_to_dict
 
 router = APIRouter()
 
@@ -38,6 +39,8 @@ async def search(
     term: str = Query(...),
     cc_id: int | None = Query(default=None),
     requirement: str | None = Query(default=None),
+    utc_offset: int | None = Query(default=None, ge=-840, le=840,
+                                   description="Student UTC offset in minutes, e.g. 480 for UTC+8"),
 ) -> list[dict[str, Any]]:
     try:
         parse_term_label(term)
@@ -89,7 +92,9 @@ async def search(
     return [
         {
             **{k: v for k, v in asdict(r).items() if k != "sections"},
-            "sections": [asdict(s) for s in r.sections],
+            "sections": [
+                section_to_dict(s, student_utc_offset_minutes=utc_offset) for s in r.sections
+            ],
         }
         for r in results
     ]
