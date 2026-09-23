@@ -155,6 +155,7 @@ tr:hover td {
 .badge-green { background: #dcfce7; color: #166534; }
 .badge-red   { background: #fee2e2; color: #991b1b; }
 .badge-gray  { background: #f3f4f6; color: #6b7280; }
+.badge-blue  { background: #dbeafe; color: #1e40af; }
 
 #ingest-bar {
   display: flex;
