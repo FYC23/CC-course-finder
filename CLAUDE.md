@@ -58,8 +58,10 @@ Queries live CC schedule systems to check if articulated courses are offered in 
 - `term.py` — parses term labels like `"Summer 2026"` into provider-specific formats
 
 **Scrapers** (each implements `ScheduleProvider`):
-- `banner_ellucian.py` — Banner/Ellucian (majority of CA CCs)
-- `banner_ssb_classic.py` — Banner SSB Classic variant (MtSAC, CCSF)
+- `colleague_selfservice.py` — Ellucian Colleague Self-Service (`/Student/Courses`, ~30 CA CCs); term codes resolved from the portal's `TermFilters`, per-district overrides in `params`
+- `colleague_sections.py` — section/meeting parsing for Colleague JSON
+- `banner9_ssb.py` — Banner 9 StudentRegistrationSsb (~14 CA CCs); term codes resolved via `getTerms`, optional `params.campus_codes` for shared district portals
+- `normalize.py` — shared day/time/modality/status normalization used by every adapter
 - `vsb_4cd.py` — VSB 4CD system (DVC, LMC, CCC)
 - `wvm_static.py` — WVM static schedule
 
