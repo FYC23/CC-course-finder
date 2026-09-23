@@ -1,0 +1,156 @@
+"""Normalization helpers shared by every schedule adapter.
+
+Adapters translate portal-specific fields into the enums in models.py through
+these functions so that the rules live in one place and never guess.
+"""
+from __future__ import annotations
+
+import re
+from collections.abc import Iterable, Mapping, Sequence
+from datetime import date, datetime, time
+
+from .models import Meeting
+
+_DAY_KEY_TO_CODE: Mapping[str, str] = {
+    "monday": "M",
+    "tuesday": "T",
+    "wednesday": "W",
+    "thursday": "R",
+    "friday": "F",
+    "saturday": "S",
+    "sunday": "U",
+}
+_DAY_ORDER: tuple[str, ...] = ("M", "T", "W", "R", "F", "S", "U")
+# Colleague's Days array uses 0=Sunday ... 6=Saturday.
+_INDEX_TO_CODE: Mapping[int, str] = {0: "U", 1: "M", 2: "T", 3: "W", 4: "R", 5: "F", 6: "S"}
+
+_HHMM_RE = re.compile(r"^(\d{1,2}):?(\d{2})(?::\d{2})?\s*([AaPp][Mm])?$")
+
+_STATUS_MAP: Mapping[str, str] = {
+    "open": "open",
+    "open seats": "open",
+    "closed": "closed",
+    "full": "closed",
+    "cancelled": "closed",
+    "canceled": "closed",
+    "waitlist": "waitlist",
+    "waitlisted": "waitlist",
+}
+
+# Matched as whole words after lowercasing and splitting on non-letters, so "ol" never
+# matches inside "College" and "lab" never matches inside "Collaborative".
+_HYBRID_WORDS = frozenset({"hybrid", "hyb"})
+_ONLINE_WORDS = frozenset(
+    {"online", "ol", "web", "distance", "asynchronous", "synchronous", "remote", "internet", "de"}
+)
+_SYNC_WORDS = frozenset({"synchronous", "sync", "regmeet"})
+_IN_PERSON_WORDS = frozenset(
+    {"lecture", "lec", "lab", "laboratory", "person", "campus", "classroom", "discussion"}
+)
+_WORD_RE = re.compile(r"[a-z]+")
+
+
+def parse_hhmm(raw: object) -> time | None:
+    """Parse '0730', '10:45', '10:45:00', '10:45 AM', '02:20PM'. Returns None if unparseable."""
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    match = _HHMM_RE.match(text)
+    if match is None:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    meridiem = (match.group(3) or "").lower()
+    if meridiem == "pm" and hour < 12:
+        hour += 12
+    if meridiem == "am" and hour == 12:
+        hour = 0
+    if hour > 23 or minute > 59:
+        return None
+    return time(hour, minute)
+
+
+def parse_date(raw: object) -> date | None:
+    """Parse '08/24/2026', '08/24/26', '2026-08-24', or an ISO datetime. None if unparseable."""
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text).date()
+    except ValueError:
+        return None
+
+
+def days_from_flags(flags: Mapping[str, object]) -> tuple[str, ...]:
+    """Banner-style {'monday': True, ...} to ('M', ...), always in weekday order."""
+    present = {_DAY_KEY_TO_CODE[k.lower()] for k, v in flags.items() if k.lower() in _DAY_KEY_TO_CODE and v}
+    return tuple(code for code in _DAY_ORDER if code in present)
+
+
+def days_from_indices(indices: Iterable[object]) -> tuple[str, ...]:
+    """Colleague-style [1, 3] (0=Sunday) to ('M', 'W'), always in weekday order."""
+    present = {_INDEX_TO_CODE[i] for i in indices if isinstance(i, int) and i in _INDEX_TO_CODE}
+    return tuple(code for code in _DAY_ORDER if code in present)
+
+
+def normalize_status(raw: object) -> str:
+    if not isinstance(raw, str):
+        return "unknown"
+    return _STATUS_MAP.get(raw.strip().lower(), "unknown")
+
+
+def int_or_none(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value.strip())
+    return None
+
+
+def normalize_modality(*, raw_tokens: Iterable[str], meetings: Sequence[Meeting]) -> str:
+    """Map portal wording plus meeting evidence to the modality enum. Never guesses."""
+    text = " ".join(t.lower() for t in raw_tokens if isinstance(t, str))
+    words = frozenset(_WORD_RE.findall(text.replace("reg-meet", "regmeet").replace("reg meet", "regmeet")))
+    from_text = _modality_from_words(words, meetings)
+    if from_text is not None:
+        return from_text
+    return _modality_from_meetings(meetings)
+
+
+def _modality_from_words(words: frozenset[str], meetings: Sequence[Meeting]) -> str | None:
+    if not words:
+        return None
+    if words & _HYBRID_WORDS:
+        return "hybrid"
+    if words & _ONLINE_WORDS:
+        if words & _SYNC_WORDS or any(m.is_timed for m in meetings):
+            return "sync_online"
+        return "async_online"
+    if words & _IN_PERSON_WORDS:
+        if meetings and all(m.is_online for m in meetings):
+            return "sync_online" if any(m.is_timed for m in meetings) else "async_online"
+        return "in_person"
+    return None
+
+
+def _modality_from_meetings(meetings: Sequence[Meeting]) -> str:
+    if not meetings:
+        return "unknown"
+    online = [m for m in meetings if m.is_online]
+    in_person = [m for m in meetings if not m.is_online]
+    if online and in_person:
+        return "hybrid"
+    if online:
+        return "sync_online" if any(m.is_timed for m in online) else "async_online"
+    return "in_person"
