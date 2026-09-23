@@ -75,14 +75,39 @@ def resolve_term_code(
         timeout=20,
     )
     response.raise_for_status()
-    needle = term.label.lower()
+    best: tuple[int, str] | None = None
     for entry in _safe_json(response).get("TermFilters") or []:
-        if not isinstance(entry, dict):
+        if not isinstance(entry, dict) or not entry.get("Value"):
             continue
-        description = str(entry.get("Description") or entry.get("Text") or "").lower()
-        if needle in description and entry.get("Value"):
-            return str(entry["Value"])
+        description = str(entry.get("Description") or entry.get("Text") or "")
+        rank = _term_label_match_rank(term.label, description)
+        if rank is None:
+            continue
+        if best is None or rank < best[0]:
+            best = (rank, str(entry["Value"]))
+    if best is not None:
+        return best[1]
     raise ValueError(f"Term {term.label!r} not found in Colleague TermFilters at {base_root}")
+
+
+def _term_label_match_rank(label: str, description: str) -> int | None:
+    """Rank a TermFilters description against the target term label (lower is better).
+
+    Some portals (e.g. RSCCD) list a continuing-education variant, such as
+    "Summer 2026-CONT.ED.", ahead of the regular term, "Summer 2026" -- both contain the
+    label as a substring, so a plain substring match picks the wrong one. Prefer an exact
+    match, then a label-prefixed description (e.g. "Fall 2026 Regular"), then fall back to
+    any substring match.
+    """
+    needle = label.strip().lower()
+    haystack = description.strip().lower()
+    if haystack == needle:
+        return 0
+    if haystack.startswith(needle) and len(haystack) > len(needle) and haystack[len(needle)].isspace():
+        return 1
+    if needle in haystack:
+        return 2
+    return None
 
 
 @dataclass(frozen=True)

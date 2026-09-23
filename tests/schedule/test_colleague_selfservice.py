@@ -98,6 +98,37 @@ def test_resolve_term_code_missing_raises():
         resolve_term_code(session, "https://example.edu", parse_term_label("Fall 2026"), keyword="MATH 1", headers={})
 
 
+def test_resolve_term_code_prefers_exact_label_over_continuing_ed():
+    """Regression: RSCCD's TermFilters list the continuing-education variant
+    ("Summer 2026-CONT.ED.", code 2026SUN) before the regular term ("Summer 2026",
+    code 2026SU). A first-substring match wrongly returns the CONT.ED. term because
+    "Summer 2026" is a substring of "Summer 2026-CONT.ED.". The exact match must win."""
+    session = MagicMock(spec=requests.Session)
+    session.post.return_value = _resp(
+        {"TermFilters": [
+            {"Value": "2026SUN", "Description": "Summer 2026-CONT.ED."},
+            {"Value": "2026SU", "Description": "Summer 2026"},
+        ]}
+    )
+    code = resolve_term_code(
+        session, "https://example.edu", parse_term_label("Summer 2026"), keyword="MATH 1", headers={}
+    )
+    assert code == "2026SU"
+
+
+def test_resolve_term_code_matches_label_prefix_when_no_exact_entry():
+    """A description like "Fall 2026 Regular" has no exact match for the "Fall 2026" label,
+    but starts with the label followed by whitespace, so it must still resolve."""
+    session = MagicMock(spec=requests.Session)
+    session.post.return_value = _resp(
+        {"TermFilters": [{"Value": "2026FA", "Description": "Fall 2026 Regular"}]}
+    )
+    code = resolve_term_code(
+        session, "https://example.edu", parse_term_label("Fall 2026"), keyword="MATH 1", headers={}
+    )
+    assert code == "2026FA"
+
+
 def test_supports_source_with_empty_locations():
     src = CollegeScheduleSource(cc_id=73, cc_name="Napa Valley College", system="colleague_selfservice",
                                 base_url="https://colss-prod.ec.napavalley.edu", locations=())
