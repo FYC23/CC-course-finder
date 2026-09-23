@@ -191,20 +191,21 @@ Pilot set only; expect this list to expand.
 
 | College                       | `cc_id` | Adapter                                                       | Status      |
 | ----------------------------- | ------- | ------------------------------------------------------------- | ----------- |
-| Evergreen Valley College      | 2       | `banner` — Ellucian COLSS (`PostSearchCriteria` / `Sections`) | works       |
+| Evergreen Valley College      | 2       | `colleague_selfservice` — Ellucian Colleague portal           | works       |
 | West Valley College           | 80      | `wvm_static` — `schedule.wvm.edu` static JSON                 | works       |
 | Diablo Valley College         | 114     | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
 | Los Medanos College           | 61      | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
 | Contra Costa College          | 28      | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
-| Mount San Antonio College     | 62      | `banner_ssb_classic` — old SSB REST API                       | works       |
-| City College of San Francisco | 33      | `banner_ssb_classic` — old SSB REST API (port 8105)           | works       |
-| Los Angeles City College      | 3       | `banner` — (LACCD schedule likely not Banner)                 | broken      |
-| College of Marin              | 4       | `marin_colleague` — public ASP.NET schedule grid              | works       |
-| College of San Mateo          | 5       | `smcccd_colleague` — SMCCD schedule API (`/courses`)          | needs creds |
+| Mount San Antonio College     | 62      | `banner9_ssb` — Banner 9 SSB portal                           | works       |
+| City College of San Francisco | 33      | `banner9_ssb` — Banner 9 SSB portal (port 8105)               | works       |
+| Los Angeles City College      | 3       | `colleague_selfservice` — (LACCD PeopleSoft, unsupported)     | unsupported |
+| College of Marin              | 4       | `marin_colleague` — (unsupported)                             | unsupported |
+| College of San Mateo          | 5       | `banner9_ssb` — SMCCD shared Banner 9 portal                  | works       |
 
+Full catalog with per-district parameters: `src/schedule/data/colleges.json` (about 40 colleges as of Phase 1). Entries carry `status` (`active`, `stale`, `unsupported`) and `params` (`term_format`, `campus_codes`, `location_match`).
 
-`banner_ssb_classic` resolves term codes dynamically via `getTerms` (each institution uses a different numeric suffix scheme). Raw snippets only when `SCHEDULE_DEBUG_RAW_SUMMARY=1`.
+`banner9_ssb` resolves term codes dynamically; campus filtering applied where noted in catalog via `params` or `locations`.
 
 `vsb_4cd` uses the Visual Schedule Builder (`vsb.4cd.edu`) shared by Diablo Valley, Los Medanos, and Contra Costa colleges. Term codes are derived deterministically (`YYYY` + `10`/`20`/`30` for Summer/Fall/Spring). Campus filtering is applied per-block using the `locations` field.
 
-`smcccd_colleague` uses the documented SMCCD API surface. The public docs expose `/courses`, but live responses require Basic Auth credentials; configure `SMCCD_API_USERNAME` and `SMCCD_API_PASSWORD` to enable live schedule pulls.
+`colleague_selfservice` uses Ellucian's Colleague self-service portal with per-district discovery of location and term codes.
