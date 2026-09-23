@@ -193,9 +193,9 @@ Pilot set only; expect this list to expand.
 | ----------------------------- | ------- | ------------------------------------------------------------- | ----------- |
 | Evergreen Valley College      | 2       | `colleague_selfservice` — Ellucian Colleague portal           | works       |
 | West Valley College           | 80      | `wvm_static` — `schedule.wvm.edu` static JSON                 | works       |
-| Diablo Valley College         | 114     | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
-| Los Medanos College           | 61      | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
-| Contra Costa College          | 28      | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
+| Diablo Valley College         | 114     | `vsb_4cd` — VSB `api/class-data` XML                          | stale       |
+| Los Medanos College           | 61      | `vsb_4cd` — VSB `api/class-data` XML                          | stale       |
+| Contra Costa College          | 28      | `vsb_4cd` — VSB `api/class-data` XML                          | stale       |
 | Mount San Antonio College     | 62      | `banner9_ssb` — Banner 9 SSB portal                           | works       |
 | City College of San Francisco | 33      | `banner9_ssb` — Banner 9 SSB portal (port 8105)               | works       |
 | Los Angeles City College      | 3       | `colleague_selfservice` — (LACCD PeopleSoft, unsupported)     | unsupported |
