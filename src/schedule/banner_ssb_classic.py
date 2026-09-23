@@ -50,7 +50,7 @@ class BannerSsbClassicProvider:
         self._term_cache: dict[tuple[str, str], str] = {}
 
     def supports_source(self, source: CollegeScheduleSource) -> bool:
-        return source.system == "banner_ssb_classic"
+        return source.system == "banner9_ssb"
 
     def search_course(
         self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str

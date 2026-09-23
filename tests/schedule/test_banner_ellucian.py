@@ -6,7 +6,7 @@ from src.schedule.models import CollegeScheduleSource
 _BANNER_SOURCE = CollegeScheduleSource(
     cc_id=2,
     cc_name="Evergreen Valley College",
-    system="banner",
+    system="colleague_selfservice",
     base_url="https://colss-prod.ec.sjeccd.edu/Student/Courses/SearchResult",
     locations=("EVC",),
 )

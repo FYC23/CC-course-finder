@@ -2,7 +2,7 @@
   {
     "cc_id": 2,
     "cc_name": "Evergreen Valley College",
-    "system": "banner",
+    "system": "colleague_selfservice",
     "base_url": "https://colss-prod.ec.sjeccd.edu/Student/Courses/SearchResult",
     "locations": ["EVC"],
     "source_url": "https://www.evc.edu/current-students/schedule-of-classes"
@@ -42,7 +42,7 @@
   {
     "cc_id": 62,
     "cc_name": "Mount San Antonio College",
-    "system": "banner_ssb_classic",
+    "system": "banner9_ssb",
     "base_url": "https://prodrg.mtsac.edu",
     "locations": ["MTSAC"],
     "source_url": "https://www.mtsac.edu/schedule/"
@@ -50,7 +50,7 @@
   {
     "cc_id": 33,
     "cc_name": "City College of San Francisco",
-    "system": "banner_ssb_classic",
+    "system": "banner9_ssb",
     "base_url": "https://ssb1.ccsf.edu:8105",
     "locations": ["CCSF"],
     "source_url": "https://www.ccsf.edu/academics/schedule-of-classes"
@@ -58,7 +58,7 @@
   {
     "cc_id": 3,
     "cc_name": "Los Angeles City College",
-    "system": "banner",
+    "system": "colleague_selfservice",
     "base_url": "https://laccss-prod.ec.laccd.edu/Student/Courses/SearchResult",
     "locations": ["LACC"],
     "source_url": "https://www.lacitycollege.edu/academics/class-schedules"

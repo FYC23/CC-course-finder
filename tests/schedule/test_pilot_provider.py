@@ -560,7 +560,7 @@ def test_banner_provider_passes_location_token_to_requests() -> None:
     source = CollegeScheduleSource(
         cc_id=80,
         cc_name="West Valley College",
-        system="banner",
+        system="colleague_selfservice",
         base_url="https://colss-prod.ncscsaas.elluciancloud.com/Student/Courses/SearchResult",
         locations=("WVC",),
     )

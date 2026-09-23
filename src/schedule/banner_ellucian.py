@@ -48,7 +48,7 @@ class BannerEllucianProvider:
         self._session = session or requests.Session()
 
     def supports_source(self, source: CollegeScheduleSource) -> bool:
-        return source.system == "banner" and bool(source.locations)
+        return source.system == "colleague_selfservice"
 
     def search_course(
         self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str

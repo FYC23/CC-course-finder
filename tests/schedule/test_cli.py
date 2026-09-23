@@ -124,7 +124,8 @@ def test_cli_rejects_unsupported_source_system(monkeypatch) -> None:
     )
     result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-id", "2"])
     assert result.exit_code == 2
-    assert "No provider configured for source system='banner'" in result.output
+    assert "No provider configured for source" in result.output
+    assert "colleague_selfservice" in result.output
 
 
 def test_cli_all_ccs_passes_none_cc_id(monkeypatch, tmp_path: Path) -> None:

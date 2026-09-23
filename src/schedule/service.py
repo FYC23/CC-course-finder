@@ -42,6 +42,9 @@ class ScheduleService:
             except KeyError:
                 continue
 
+            if source.status == "unsupported":
+                continue
+
             if not self._provider.supports_source(source):
                 raise ValueError(
                     f"No provider configured for source system={source.system!r} "

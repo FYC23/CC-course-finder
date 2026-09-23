@@ -18,7 +18,7 @@ class _FakeProvider(ScheduleProvider):
         self.calls: list[tuple[str, int, str]] = []
 
     def supports_source(self, source) -> bool:
-        return source.system in ("banner", "wvm_static")
+        return source.system in ("colleague_selfservice", "wvm_static")
 
     def search_course(
         self, *, source, term, course_code: str
@@ -114,7 +114,7 @@ def _seed_assist_rows(db_path: Path) -> None:
 def test_catalog_lookup() -> None:
     source = get_college_source(2)
     assert source.cc_name == "Evergreen Valley College"
-    assert source.system == "banner"
+    assert source.system == "colleague_selfservice"
     assert source.locations == ("EVC",)
 
     wvc = get_college_source(80)
@@ -189,3 +189,37 @@ def test_schedule_service_fail_soft_on_request_error(tmp_path: Path) -> None:
     assert len(out) == 1
     assert out[0].offered is False
     assert out[0].raw_summary == "[request_error type=RequestException]"
+
+
+def test_query_skips_unsupported_colleges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import json
+    from src.schedule import catalog
+
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_assist_rows(db_path)
+    entries = [
+        {
+            "cc_id": 2,
+            "cc_name": "Evergreen Valley College",
+            "system": "colleague_selfservice",
+            "base_url": "https://example.edu",
+            "locations": ["EVC"],
+            "status": "unsupported",
+            "note": "test",
+        }
+    ]
+    catalog_file = tmp_path / "colleges.json"
+    catalog_file.write_text(json.dumps(entries))
+    catalog._reload(catalog_file)
+    try:
+        provider = _FakeProvider()
+        service = ScheduleService(db_path=db_path, provider=provider)
+        results = service.query(
+            target_school="University of California, Los Angeles",
+            target_major="Computer Science",
+            term_label="Summer 2026",
+        )
+        assert results == []
+        assert provider.calls == []
+    finally:
+        catalog._reload()

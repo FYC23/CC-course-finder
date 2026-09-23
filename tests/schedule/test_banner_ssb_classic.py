@@ -12,7 +12,7 @@ from src.schedule.term import parse_term_label
 _MTSAC = CollegeScheduleSource(
     cc_id=62,
     cc_name="Mount San Antonio College",
-    system="banner_ssb_classic",
+    system="banner9_ssb",
     base_url="https://prodrg.mtsac.edu",
     locations=("MTSAC",),
 )
@@ -20,7 +20,7 @@ _MTSAC = CollegeScheduleSource(
 _BANNER = CollegeScheduleSource(
     cc_id=2,
     cc_name="Evergreen Valley College",
-    system="banner",
+    system="colleague_selfservice",
     base_url="https://colss-prod.ec.sjeccd.edu/Student/Courses/SearchResult",
     locations=("EVC",),
 )

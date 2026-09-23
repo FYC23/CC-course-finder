@@ -34,8 +34,8 @@ def _write_json(tmp_path: Path, data: object) -> Path:
 _VALID_ENTRY = {
     "cc_id": 999,
     "cc_name": "Test College",
-    "system": "banner",
-    "base_url": "https://example.edu/Student/Courses/SearchResult",
+    "system": "colleague_selfservice",
+    "base_url": "https://example.edu",
     "locations": ["TC"],
 }
 
@@ -54,12 +54,6 @@ def test_validate_entry_missing_key(missing_key: str):
 def test_validate_entry_unknown_system():
     entry = {**_VALID_ENTRY, "system": "peoplesoft"}
     with pytest.raises(ValueError, match="Unknown system"):
-        _validate_entry(entry)
-
-
-def test_validate_entry_empty_locations():
-    entry = {**_VALID_ENTRY, "locations": []}
-    with pytest.raises(ValueError, match="Empty locations"):
         _validate_entry(entry)
 
 
@@ -101,13 +95,6 @@ def test_load_unknown_system(tmp_path: Path):
     data = [{**_VALID_ENTRY, "system": "colleague"}]
     p = _write_json(tmp_path, data)
     with pytest.raises(ValueError, match="Unknown system"):
-        _load(p)
-
-
-def test_load_empty_locations(tmp_path: Path):
-    data = [{**_VALID_ENTRY, "locations": []}]
-    p = _write_json(tmp_path, data)
-    with pytest.raises(ValueError, match="Empty locations"):
         _load(p)
 
 
@@ -164,14 +151,13 @@ def test_get_college_source_all_entries(entry: dict):
     src = get_college_source(entry["cc_id"])
     assert src.cc_id == entry["cc_id"]
     assert src.system in (
-        "banner",
+        "colleague_selfservice",
+        "banner9_ssb",
         "wvm_static",
-        "banner_ssb_classic",
         "vsb_4cd",
         "marin_colleague",
         "smcccd_colleague",
     )
-    assert len(src.locations) > 0
 
 
 @pytest.mark.parametrize("entry", _all_entries(), ids=lambda e: e.get("cc_name", "?"))
@@ -199,3 +185,60 @@ def test_find_by_name_ambiguous(tmp_path: Path):
     _reload(p)
     with pytest.raises(KeyError, match="Ambiguous"):
         find_college_source_by_name("valley college")
+
+
+# ---------------------------------------------------------------------------
+# Schema v2: aliases, params, status
+# ---------------------------------------------------------------------------
+
+def test_legacy_system_names_are_aliased(tmp_path: Path):
+    data = [
+        {**_VALID_ENTRY, "cc_id": 1, "cc_name": "Old Banner", "system": "banner"},
+        {**_VALID_ENTRY, "cc_id": 2, "cc_name": "Old Classic", "system": "banner_ssb_classic"},
+    ]
+    _reload(_write_json(tmp_path, data))
+    assert get_college_source(1).system == "colleague_selfservice"
+    assert get_college_source(2).system == "banner9_ssb"
+
+
+def test_empty_locations_are_allowed(tmp_path: Path):
+    _reload(_write_json(tmp_path, [{**_VALID_ENTRY, "locations": []}]))
+    assert get_college_source(999).locations == ()
+
+
+def test_params_are_loaded_as_read_only_mapping(tmp_path: Path):
+    entry = {**_VALID_ENTRY, "params": {"term_format": "{yyyy}{SEASON2}", "campus_codes": "BB,BC"}}
+    _reload(_write_json(tmp_path, [entry]))
+    src = get_college_source(999)
+    assert src.params["term_format"] == "{yyyy}{SEASON2}"
+    with pytest.raises(TypeError):
+        src.params["x"] = "y"  # type: ignore[index]
+
+
+def test_params_must_be_string_map():
+    with pytest.raises(ValueError, match="params"):
+        _validate_entry({**_VALID_ENTRY, "params": {"n": 3}})
+    with pytest.raises(ValueError, match="params"):
+        _validate_entry({**_VALID_ENTRY, "params": ["a"]})
+
+
+def test_status_defaults_to_active(tmp_path: Path):
+    _reload(_write_json(tmp_path, [_VALID_ENTRY]))
+    assert get_college_source(999).status == "active"
+
+
+def test_status_must_be_known():
+    with pytest.raises(ValueError, match="status"):
+        _validate_entry({**_VALID_ENTRY, "status": "broken"})
+
+
+def test_status_unsupported_is_loaded(tmp_path: Path):
+    _reload(_write_json(tmp_path, [{**_VALID_ENTRY, "status": "unsupported", "note": "SSO"}]))
+    assert get_college_source(999).status == "unsupported"
+
+
+def test_list_college_sources_returns_all(tmp_path: Path):
+    from src.schedule.catalog import list_college_sources
+    data = [{**_VALID_ENTRY, "cc_id": 1, "cc_name": "A"}, {**_VALID_ENTRY, "cc_id": 2, "cc_name": "B"}]
+    _reload(_write_json(tmp_path, data))
+    assert [s.cc_id for s in list_college_sources()] == [1, 2]
