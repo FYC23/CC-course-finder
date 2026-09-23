@@ -9,7 +9,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, time
 
-from .models import Meeting
+from .models import DAY_CODES, Meeting
 
 _DAY_KEY_TO_CODE: Mapping[str, str] = {
     "monday": "M",
@@ -20,7 +20,6 @@ _DAY_KEY_TO_CODE: Mapping[str, str] = {
     "saturday": "S",
     "sunday": "U",
 }
-_DAY_ORDER: tuple[str, ...] = ("M", "T", "W", "R", "F", "S", "U")
 # Colleague's Days array uses 0=Sunday ... 6=Saturday.
 _INDEX_TO_CODE: Mapping[int, str] = {0: "U", 1: "M", 2: "T", 3: "W", 4: "R", 5: "F", 6: "S"}
 
@@ -93,13 +92,13 @@ def parse_date(raw: object) -> date | None:
 def days_from_flags(flags: Mapping[str, object]) -> tuple[str, ...]:
     """Banner-style {'monday': True, ...} to ('M', ...), always in weekday order."""
     present = {_DAY_KEY_TO_CODE[k.lower()] for k, v in flags.items() if k.lower() in _DAY_KEY_TO_CODE and v}
-    return tuple(code for code in _DAY_ORDER if code in present)
+    return tuple(code for code in DAY_CODES if code in present)
 
 
 def days_from_indices(indices: Iterable[object]) -> tuple[str, ...]:
     """Colleague-style [1, 3] (0=Sunday) to ('M', 'W'), always in weekday order."""
     present = {_INDEX_TO_CODE[i] for i in indices if isinstance(i, int) and i in _INDEX_TO_CODE}
-    return tuple(code for code in _DAY_ORDER if code in present)
+    return tuple(code for code in DAY_CODES if code in present)
 
 
 def normalize_status(raw: object) -> str:
@@ -120,6 +119,12 @@ def int_or_none(value: object) -> int | None:
 
 def normalize_modality(*, raw_tokens: Iterable[str], meetings: Sequence[Meeting]) -> str:
     """Map portal wording plus meeting evidence to the modality enum. Never guesses."""
+    # Hybrid evidence from meetings takes priority over any token-based classification.
+    online = [m for m in meetings if m.is_online]
+    in_person = [m for m in meetings if not m.is_online]
+    if online and in_person:
+        return "hybrid"
+
     text = " ".join(t.lower() for t in raw_tokens if isinstance(t, str))
     words = frozenset(_WORD_RE.findall(text.replace("reg-meet", "regmeet").replace("reg meet", "regmeet")))
     from_text = _modality_from_words(words, meetings)

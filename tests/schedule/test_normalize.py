@@ -115,6 +115,18 @@ def test_modality_no_evidence_is_unknown():
     assert normalize_modality(raw_tokens=["02"], meetings=()) == "unknown"
 
 
+def test_modality_lecture_word_with_mixed_meetings_is_hybrid():
+    online = _meeting(is_online=True)
+    room = _meeting(days=("T",), start_local=time(9), end_local=time(10), location="Room A")
+    assert normalize_modality(raw_tokens=["Lecture"], meetings=(online, room)) == "hybrid"
+
+
+def test_modality_online_word_with_mixed_meetings_is_hybrid():
+    online = _meeting(is_online=True)
+    room = _meeting(days=("T",), start_local=time(9), end_local=time(10), location="Room A")
+    assert normalize_modality(raw_tokens=["Online"], meetings=(online, room)) == "hybrid"
+
+
 # --- status -----------------------------------------------------------------
 
 @pytest.mark.parametrize(
