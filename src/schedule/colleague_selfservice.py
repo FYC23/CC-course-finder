@@ -107,25 +107,36 @@ class ColleagueSelfServiceProvider:
     def supports_source(self, source: CollegeScheduleSource) -> bool:
         return source.system == "colleague_selfservice"
 
-    def _bootstrap(self, bootstrap_url: str, *, course_code: str, locations: tuple[str, ...]) -> None:
+    def _bootstrap(
+        self, bootstrap_url: str, *, course_code: str, locations: tuple[str, ...]
+    ) -> dict[str, str]:
+        """Fetch the portal's search page and build this college's request headers.
+
+        The session (and this provider) is reused across every college in
+        ScheduleService.query, so the anti-forgery token and JSON headers must never be
+        written onto ``self._session.headers`` -- that would leak one college's token (or
+        Content-Type) onto the next college's requests. Instead, return a fresh dict the
+        caller threads through explicitly on every subsequent request for this college.
+        """
         params: dict[str, str] = {"keyword": course_code}
         if locations:
             params["locations"] = locations[0]
         response = self._session.get(bootstrap_url, params=params, timeout=20)
         response.raise_for_status()
         token = extract_request_token(response.text)
+        headers = dict(_JSON_HEADERS)
         if token:
-            self._session.headers["__RequestVerificationToken"] = token
-        else:
-            # The session (and this provider) is reused across colleges. Without this, a
-            # college whose bootstrap page carries no token would keep serving requests
-            # under the previous college's stale anti-forgery token.
-            self._session.headers.pop("__RequestVerificationToken", None)
-        for key, value in _JSON_HEADERS.items():
-            self._session.headers.setdefault(key, value)
+            headers["__RequestVerificationToken"] = token
+        return headers
 
     def _term_code(
-        self, base_root: str, term: ParsedTerm, *, source: CollegeScheduleSource, keyword: str
+        self,
+        base_root: str,
+        term: ParsedTerm,
+        *,
+        source: CollegeScheduleSource,
+        keyword: str,
+        headers: dict[str, str],
     ) -> str:
         fmt = source.params.get("term_format")
         if fmt:
@@ -133,7 +144,7 @@ class ColleagueSelfServiceProvider:
         cache_key = (base_root, term.label)
         if cache_key not in self._term_cache:
             self._term_cache[cache_key] = resolve_term_code(
-                self._session, base_root, term, keyword=keyword, headers=dict(self._session.headers)
+                self._session, base_root, term, keyword=keyword, headers=headers
             )
         return self._term_cache[cache_key]
 
@@ -153,8 +164,10 @@ class ColleagueSelfServiceProvider:
         sections_url = f"{base_root}/Student/Courses/Sections"
         locations = source.locations
         location_match = source.params.get("location_match", "").strip().lower()
-        self._bootstrap(bootstrap_url, course_code=course_code, locations=locations)
-        term_code = self._term_code(base_root, term, source=source, keyword=course_code)
+        headers = self._bootstrap(bootstrap_url, course_code=course_code, locations=locations)
+        term_code = self._term_code(
+            base_root, term, source=source, keyword=course_code, headers=headers
+        )
 
         last_response: requests.Response | None = None
         last_stats = _MatchStats()
@@ -167,6 +180,7 @@ class ColleagueSelfServiceProvider:
                 requested_identity=requested_identity,
                 locations=locations,
                 location_match=location_match,
+                headers=headers,
             )
             last_response = section_listing
             last_stats = section_stats
@@ -188,6 +202,7 @@ class ColleagueSelfServiceProvider:
                     view="CatalogListing",
                     locations=locations,
                 ),
+                headers=headers,
                 timeout=20,
             )
             catalog_listing.raise_for_status()
@@ -198,6 +213,7 @@ class ColleagueSelfServiceProvider:
                 payload=_safe_json(catalog_listing),
                 requested_identity=requested_identity,
                 location_match=location_match,
+                headers=headers,
             )
             stats = section_stats.combined(catalog_stats)
             last_stats = stats
@@ -279,6 +295,7 @@ def _search_section_listing(
     term_code: str,
     requested_identity: tuple[str, str] | None,
     locations: tuple[str, ...],
+    headers: dict[str, str],
     location_match: str = "",
 ) -> tuple[requests.Response, list[ParsedSection], _MatchStats]:
     page_number = 1
@@ -295,6 +312,7 @@ def _search_section_listing(
                 page_number=page_number,
                 locations=locations,
             ),
+            headers=headers,
             timeout=20,
         )
         response.raise_for_status()
@@ -355,6 +373,7 @@ def _fetch_sections_from_catalog(
     sections_url: str,
     payload: dict[str, object],
     requested_identity: tuple[str, str] | None,
+    headers: dict[str, str],
     location_match: str = "",
 ) -> tuple[list[ParsedSection], _MatchStats]:
     sections: list[ParsedSection] = []
@@ -383,6 +402,7 @@ def _fetch_sections_from_catalog(
         section_response = session.post(
             sections_url,
             json={"courseId": course_id, "sectionIds": section_ids},
+            headers=headers,
             timeout=20,
         )
         section_calls += 1

@@ -128,7 +128,10 @@ def test_search_uses_term_format_override_and_sends_token():
     payload = session.post.call_args_list[0].kwargs["json"]
     assert payload["terms"] == ["2026/FA"]
     assert payload["locations"] == []
-    assert session.headers["__RequestVerificationToken"] == "CfDJ8ABC"
+    assert (
+        session.post.call_args_list[0].kwargs["headers"]["__RequestVerificationToken"]
+        == "CfDJ8ABC"
+    )
 
 
 def test_search_filters_by_location_match_when_locations_empty():
@@ -151,10 +154,10 @@ def test_search_filters_by_location_match_when_locations_empty():
     assert [s.section_id for s in result.sections] == ["1"]
 
 
-def test_bootstrap_clears_stale_token_when_next_college_has_none():
-    """Regression: the session (and provider) is reused across colleges. A college whose
-    bootstrap page carries no anti-forgery token must not keep sending the previous
-    college's token."""
+def test_bootstrap_isolates_token_across_colleges():
+    """Regression: one provider (and one requests.Session) is reused across every college in
+    ScheduleService.query. The token for college A must never leak onto college B's requests,
+    and the shared session.headers must never be mutated at all."""
     src_a = CollegeScheduleSource(
         cc_id=90, cc_name="College A", system="colleague_selfservice",
         base_url="https://colss-a.example.edu", locations=(),
@@ -176,7 +179,14 @@ def test_bootstrap_clears_stale_token_when_next_college_has_none():
     provider = ColleagueSelfServiceProvider(session=session)
 
     provider.search_course(source=src_a, term=parse_term_label("Fall 2026"), course_code="MATH 25")
-    assert session.headers["__RequestVerificationToken"] == "CfDJ8ABC"
+    calls_after_a = len(session.post.call_args_list)
+    assert (
+        session.post.call_args_list[0].kwargs["headers"]["__RequestVerificationToken"]
+        == "CfDJ8ABC"
+    )
 
     provider.search_course(source=src_b, term=parse_term_label("Fall 2026"), course_code="MATH 25")
+    for call in session.post.call_args_list[calls_after_a:]:
+        assert "__RequestVerificationToken" not in call.kwargs.get("headers", {})
+
     assert "__RequestVerificationToken" not in session.headers
