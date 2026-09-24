@@ -131,19 +131,20 @@ class AssistDiscovery:
         max_community_colleges: int | None = None,
     ) -> list[AgreementRef]:
         target_school = self.resolve_school(target_school_name)
-        institutions_by_id = {i.id: i.name for i in self.get_institutions()}
+        institutions = {i.id: i for i in self.get_institutions()}
         year_labels = self.get_year_labels()
         refs_by_cc: dict[int, AgreementRef] = {}
         cc_order: list[int] = []
 
         agreement_candidates = list(self._agreement_candidates(target_school.id))
         for candidate in agreement_candidates:
-            if not candidate.get("isCommunityCollege", False):
-                continue
             cc_id = int(candidate["institutionParentId"])
+            institution = institutions.get(cc_id)
+            if not _is_community_college(candidate, institution):
+                continue
             cc_name = str(
                 candidate.get("institutionParentName")
-                or institutions_by_id.get(cc_id)
+                or (institution.name if institution else None)
                 or str(cc_id)
             )
             sending_years = candidate.get("sendingYearIds") or []
@@ -276,3 +277,11 @@ class AssistDiscovery:
     def serialize_refs(refs: list[AgreementRef]) -> list[dict]:
         return [asdict(r) for r in refs]
 
+
+def _is_community_college(candidate: dict, institution: Institution | None) -> bool:
+    """ASSIST dropped ``isCommunityCollege`` from agreement candidates; fall back to
+    the institutions list, which still carries it."""
+    flag = candidate.get("isCommunityCollege")
+    if flag is not None:
+        return bool(flag)
+    return institution is not None and institution.is_community_college

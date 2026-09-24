@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from datetime import date, datetime, time
 
 import requests
 import typer
@@ -13,6 +14,14 @@ from .composite import build_composite_provider
 from .service import ScheduleService
 
 app = typer.Typer(help="Schedule layer query CLI.")
+
+
+def _json_default(value: object) -> str:
+    """json.dumps default= hook: Meeting carries datetime.date/time fields that
+    json.dumps cannot serialize on its own."""
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 @app.callback()
@@ -66,7 +75,7 @@ def query(
                 param_hint="--cc-id",
             )
 
-    service = ScheduleService(db_path=DB_PATH, provider=provider)
+    service = ScheduleService(db_path=DB_PATH, provider_factory=build_composite_provider)
     try:
         rows = service.query(
             target_school=target_school,
@@ -81,7 +90,7 @@ def query(
     except requests.RequestException as err:
         typer.echo(f"Schedule request failed: {err}", err=True)
         raise typer.Exit(code=1) from err
-    typer.echo(json.dumps([asdict(row) for row in rows], indent=2))
+    typer.echo(json.dumps([asdict(row) for row in rows], indent=2, default=_json_default))
 
 
 if __name__ == "__main__":

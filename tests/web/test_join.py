@@ -133,3 +133,21 @@ class TestJoinResults:
         results = join_results(artic_rows, [avail(cc_id=2, course_code="CS 49", sections=sections)])
         assert len(results[0].sections) == 1
         assert results[0].sections[0].section_id == "001"
+
+
+def test_failed_lookup_is_unknown_not_not_offered() -> None:
+    from dataclasses import replace
+
+    failed = replace(avail(cc_id=2, course_code="CS 49", offered=False),
+                     lookup_error="Couldn't reach the college's schedule server.")
+    [result] = join_results([F(cc_id=2, course_code="CS 49").row()], [failed])
+
+    assert result.offered_this_term is None
+    assert result.lookup_error == "Couldn't reach the college's schedule server."
+
+
+def test_lookup_error_is_none_when_checked_or_articulation_only() -> None:
+    rows = [F(cc_id=2, course_code="CS 49").row(), F(cc_id=3, course_code="CS 1").row()]
+    results = join_results(rows, [avail(cc_id=2, course_code="CS 49", offered=False)])
+
+    assert [(r.offered_this_term, r.lookup_error) for r in results] == [(False, None), (None, None)]

@@ -1,0 +1,66 @@
+{
+  "cc_id": 142,
+  "cc_name": "Cosumnes River College",
+  "version": 1,
+  "recorded_at": "2026-09-23",
+  "notes": "Los Rios district class search (hub.losrios.edu), shared by ARC/CRC/FLC/SCC via boolean filter flags. Term code (PeopleSoft strm, e.g. 1269 = Fall 2026) is read from the losrios.edu search page labels. Results page 20 cards at a time; offset is a page index. No seat counts on cards.",
+  "probe": { "course_code": "MATH 400", "term": "Fall 2026", "expect_min_rows": 1 },
+  "inputs": {},
+  "steps": [
+    {
+      "id": "terms",
+      "method": "GET",
+      "url": "https://losrios.edu/academics/search-class-schedules",
+      "cache": true,
+      "captures": {
+        "term": { "regex": "for=[\"'](\\d+)[\"']>\\s*{term_label}\\b", "on_missing": "term_not_listed" }
+      }
+    },
+    {
+      "id": "search",
+      "method": "GET",
+      "url": "https://hub.losrios.edu/classSearch/getCourses.php",
+      "query": {
+        "arcFilter": "false",
+        "crcFilter": "true",
+        "flcFilter": "false",
+        "sccFilter": "false",
+        "subjectFilters": "{subject}",
+        "searchBar": "{subject} {number}",
+        "strm": "{term}",
+        "href": "crc",
+        "offset": "0",
+        "first": "1"
+      },
+      "captures": { "total": { "css": "#totalResults" } },
+      "paginate": { "param": "offset", "first": 0, "increment": 1, "page_size": 20, "max_pages": 10, "total_capture": "total" }
+    }
+  ],
+  "extract": {
+    "kind": "html",
+    "marker": "div.filter-results",
+    "rows": "article.class-card",
+    "filter": [
+      { "value": "span.class-card-subj-num", "equals": "{subject} {number}" },
+      { "value": "span.college", "equals": "Cosumnes River College" }
+    ],
+    "fields": {
+      "section_id": { "css": "li.section", "regex": "(\\d+)\\s*$" },
+      "title": { "css": "div.title", "regex": "^[A-Z]+ [A-Z0-9]+\\s+(.+)$" },
+      "instructor": { "css": "li:has(> span.label:-soup-contains('Instructor'))", "regex": "^Instructor\\s*(.*)$" },
+      "course_code_as_listed": "span.class-card-subj-num"
+    },
+    "status": "li.status",
+    "modality": {
+      "tokens": [ { "css": "li:has(> span.label:-soup-contains('Mode'))", "regex": "^Mode\\s*(.*)$" } ],
+      "map": { "partially online": "hybrid" }
+    },
+    "meetings": [
+      {
+        "time_text": "li:has(> span.label:-soup-contains('Day/Time'))",
+        "time_pattern": "^Day/Time\\s*(?P<days>[A-Za-z/]+), (?P<start>\\d{1,2}:\\d{2} [ap]m) to (?P<end>\\d{1,2}:\\d{2} [ap]m)",
+        "location": { "css": "li:has(> span.label:-soup-contains('Building'))", "regex": "^Building\\s*(.*)$" }
+      }
+    ]
+  }
+}

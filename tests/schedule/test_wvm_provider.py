@@ -96,7 +96,7 @@ def test_found_open_section() -> None:
     assert open_sec.instructor == "Ada Lovelace"
     closed_sec = next(s for s in out.sections if s.section_id == "70002")
     assert closed_sec.status == "closed"
-    assert closed_sec.modality == "online"
+    assert closed_sec.modality == "async_online"
     assert out.source_url == "https://schedule.wvm.edu/data/202630/crns.json"
 
 

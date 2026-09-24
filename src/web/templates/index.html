@@ -34,7 +34,30 @@
         <option value="all">All statuses</option>
         <option value="offered">Offered</option>
         <option value="not_offered">Not offered</option>
+        <option value="check_failed">Couldn't check</option>
         <option value="articulation_only">Articulation only</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="modality-filter">Modality</label>
+      <select id="modality-filter">
+        <option value="all">Any modality</option>
+        <option value="async_online">Online, no set times</option>
+        <option value="sync_online">Online, scheduled</option>
+        <option value="hybrid">Hybrid</option>
+        <option value="in_person">In person</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="timezone">My timezone</label>
+      <select id="timezone"></select>
+    </div>
+    <div class="form-group">
+      <label for="fit-filter">Hours</label>
+      <select id="fit-filter">
+        <option value="all">Any hours</option>
+        <option value="fits_or_async">Fits my hours or async</option>
+        <option value="async">Async only</option>
       </select>
     </div>
     <div class="form-group">
@@ -65,6 +88,10 @@
     </div>
   </details>
 
+  <div id="search-progress" role="status" aria-live="polite">
+    <progress id="search-progress-bar" max="1" value="0"></progress>
+    <span id="search-progress-text"></span>
+  </div>
   <div id="results-count"></div>
   <div id="results-container"></div>
 
@@ -74,10 +101,16 @@
     const termEl = document.getElementById('term');
     const reqEl = document.getElementById('requirement');
     const statusEl = document.getElementById('status-filter');
+    const modalityEl = document.getElementById('modality-filter');
+    const fitEl = document.getElementById('fit-filter');
+    const timezoneEl = document.getElementById('timezone');
     const searchBtn = document.getElementById('search-btn');
     const toast = document.getElementById('error-toast');
     const countEl = document.getElementById('results-count');
     const container = document.getElementById('results-container');
+    const progressEl = document.getElementById('search-progress');
+    const progressBar = document.getElementById('search-progress-bar');
+    const progressText = document.getElementById('search-progress-text');
     const ingestBar = document.getElementById('ingest-bar');
     const ingestOptionsEl = document.getElementById('ingest-options');
     const stalenessBadgeEl = document.getElementById('staleness-badge');
@@ -86,6 +119,7 @@
     const maxCcEl = document.getElementById('max-cc');
     const allowNonNumericEl = document.getElementById('allow-non-numeric-keys');
     var lastResults = [];
+    var searchInProgress = false;
     var activeJobId = null;
     var pollTimer = null;
     var rowsExistForSelection = false;
@@ -301,33 +335,146 @@
         .replace(/"/g, '&quot;');
     }
 
-    function availabilityKey(offered) {
-      if (offered === true) return 'offered';
-      if (offered === false) return 'not_offered';
+    // A course's availability: offered, not offered, couldn't check (the college's
+    // schedule lookup failed, see lookup_error), or articulation only (no live schedule).
+    function availabilityKey(course) {
+      if (course.lookup_error) return 'check_failed';
+      if (course.offered_this_term === true) return 'offered';
+      if (course.offered_this_term === false) return 'not_offered';
       return 'articulation_only';
     }
 
-    function availabilityRank(offered) {
-      if (offered === true) return 0;
-      if (offered === false) return 1;
-      return 2;
+    var AVAILABILITY_RANK = { offered: 0, not_offered: 1, check_failed: 2, articulation_only: 3 };
+
+    function availabilityRank(course) {
+      return AVAILABILITY_RANK[availabilityKey(course)];
     }
 
-    function offeredBadgeEl(offered) {
+    function makeBadge(colorClass, text) {
+      var span = document.createElement('span');
+      span.className = 'badge ' + colorClass;
+      span.textContent = text;
+      return span;
+    }
+
+    function offeredBadgeEl(course) {
+      var key = availabilityKey(course);
+      if (key === 'offered') return makeBadge('badge-green', 'Offered');
+      if (key === 'not_offered') return makeBadge('badge-red', 'Not offered');
+      if (key === 'articulation_only') return makeBadge('badge-gray', 'Articulation only');
+      var wrap = document.createElement('div');
+      wrap.appendChild(makeBadge('badge-amber', "Couldn't check"));
+      var reason = document.createElement('small');
+      reason.className = 'lookup-reason';
+      reason.textContent = course.lookup_error;
+      wrap.appendChild(reason);
+      return wrap;
+    }
+
+    var COMMON_TIMEZONES = [
+      ['America/Los_Angeles', 'Pacific (California)'],
+      ['America/Denver', 'Mountain'],
+      ['America/Phoenix', 'Arizona'],
+      ['America/Chicago', 'Central'],
+      ['America/New_York', 'Eastern'],
+      ['America/Anchorage', 'Alaska'],
+      ['Pacific/Honolulu', 'Hawaii'],
+      ['America/Mexico_City', 'Mexico City'],
+      ['America/Sao_Paulo', 'Brazil (São Paulo)'],
+      ['Europe/London', 'UK (London)'],
+      ['Europe/Paris', 'Central Europe (Paris, Berlin)'],
+      ['Asia/Dubai', 'Gulf (Dubai)'],
+      ['Asia/Kolkata', 'India'],
+      ['Asia/Bangkok', 'Thailand, Vietnam'],
+      ['Asia/Jakarta', 'Indonesia (Jakarta)'],
+      ['Asia/Shanghai', 'China'],
+      ['Asia/Hong_Kong', 'Hong Kong'],
+      ['Asia/Taipei', 'Taiwan'],
+      ['Asia/Singapore', 'Singapore, Malaysia'],
+      ['Asia/Manila', 'Philippines'],
+      ['Asia/Seoul', 'Korea'],
+      ['Asia/Tokyo', 'Japan'],
+      ['Australia/Sydney', 'Australia (Sydney)'],
+      ['Pacific/Auckland', 'New Zealand']
+    ];
+
+    function utcOffsetLabel(zone) {
+      try {
+        var parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' })
+          .formatToParts(new Date());
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i].type === 'timeZoneName') return parts[i].value.replace('GMT', 'UTC');
+        }
+      } catch (e) { /* older browsers: leave the offset out of the label */ }
+      return '';
+    }
+
+    function addTimezoneOption(parent, zone, name) {
+      var opt = document.createElement('option');
+      var offset = utcOffsetLabel(zone);
+      opt.value = zone;
+      opt.textContent = name + (offset ? ' · ' + offset : '');
+      parent.appendChild(opt);
+    }
+
+    function populateTimezones(select) {
+      var none = document.createElement('option');
+      none.value = '';
+      none.textContent = "Don't check hours";
+      select.appendChild(none);
+
+      var browserZone = '';
+      try { browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+      var commonZones = COMMON_TIMEZONES.map(function(z) { return z[0]; });
+
+      var common = document.createElement('optgroup');
+      common.label = 'Common';
+      if (browserZone && commonZones.indexOf(browserZone) === -1) {
+        addTimezoneOption(common, browserZone, 'Your timezone (' + browserZone + ')');
+      }
+      COMMON_TIMEZONES.forEach(function(z) { addTimezoneOption(common, z[0], z[1]); });
+      select.appendChild(common);
+
+      if (typeof Intl.supportedValuesOf === 'function') {
+        var all = document.createElement('optgroup');
+        all.label = 'All timezones';
+        Intl.supportedValuesOf('timeZone').forEach(function(zone) {
+          if (commonZones.indexOf(zone) === -1 && zone !== browserZone) addTimezoneOption(all, zone, zone);
+        });
+        select.appendChild(all);
+      }
+      select.value = browserZone || 'America/Los_Angeles';
+    }
+
+    populateTimezones(timezoneEl);
+
+    function sectionPassesFilters(s) {
+      if (modalityEl.value !== 'all' && s.modality !== modalityEl.value) return false;
+      if (fitEl.value === 'async' && s.fit !== 'async') return false;
+      if (fitEl.value === 'fits_or_async' && s.fit !== 'fits' && s.fit !== 'async') return false;
+      return true;
+    }
+
+    function coursePassesSectionFilters(course) {
+      if (modalityEl.value === 'all' && fitEl.value === 'all') return true;
+      if (!course.sections || !course.sections.length) return false;
+      return course.sections.some(sectionPassesFilters);
+    }
+
+    function formatMeeting(m) {
+      var days = (m.days && m.days.length) ? m.days.join('') : '';
+      var when = (m.start_local && m.end_local) ? (m.start_local + '–' + m.end_local) : 'no set time';
+      var where = m.is_online ? 'online' : (m.location || '');
+      return [days, when, where].filter(Boolean).join(' · ');
+    }
+
+    function fitBadgeEl(fit) {
       var span = document.createElement('span');
       span.className = 'badge';
-      if (offered === null) {
-        span.classList.add('badge-gray');
-        span.textContent = 'Articulation only';
-        return span;
-      }
-      if (offered) {
-        span.classList.add('badge-green');
-        span.textContent = 'Offered';
-        return span;
-      }
-      span.classList.add('badge-red');
-      span.textContent = 'Not offered';
+      if (fit === 'fits') { span.classList.add('badge-green'); span.textContent = 'Fits'; }
+      else if (fit === 'async') { span.classList.add('badge-blue'); span.textContent = 'Async'; }
+      else if (fit === 'conflicts') { span.classList.add('badge-red'); span.textContent = 'Conflicts'; }
+      else { span.classList.add('badge-gray'); span.textContent = fit ? 'Unknown' : '—'; }
       return span;
     }
 
@@ -335,16 +482,17 @@
       if (!sections.length) {
         return document.createTextNode('');
       }
+      var visible = sections.filter(sectionPassesFilters);
       var details = document.createElement('details');
       var summary = document.createElement('summary');
-      summary.textContent = sections.length + ' section(s)';
+      summary.textContent = visible.length + ' of ' + sections.length + ' section(s) match';
       details.appendChild(summary);
 
       var table = document.createElement('table');
       table.className = 'sections-table';
       var thead = document.createElement('thead');
       var headRow = document.createElement('tr');
-      ['Section', 'Status', 'Modality', 'Instructor'].forEach(function(label) {
+      ['Section', 'Status', 'Modality', 'Meets (campus time)', 'Seats', 'Fit', 'Instructor'].forEach(function(label) {
         var th = document.createElement('th');
         th.textContent = label;
         headRow.appendChild(th);
@@ -353,14 +501,22 @@
       table.appendChild(thead);
 
       var tbody = document.createElement('tbody');
-      for (var i = 0; i < sections.length; i++) {
-        var s = sections[i];
+      for (var i = 0; i < visible.length; i++) {
+        var s = visible[i];
         var row = document.createElement('tr');
-        [s.section_id, s.status, s.modality, s.instructor].forEach(function(value) {
+        var meets = (s.meetings || []).map(formatMeeting).join('; ');
+        var seats = (s.seats_used != null && s.seats_total != null) ? (s.seats_used + '/' + s.seats_total) : '';
+        [s.section_id, s.status, s.modality, meets, seats].forEach(function(value) {
           var td = document.createElement('td');
           td.textContent = value || '';
           row.appendChild(td);
         });
+        var fitTd = document.createElement('td');
+        fitTd.appendChild(fitBadgeEl(s.fit));
+        row.appendChild(fitTd);
+        var instrTd = document.createElement('td');
+        instrTd.textContent = s.instructor || '';
+        row.appendChild(instrTd);
         tbody.appendChild(row);
       }
       table.appendChild(tbody);
@@ -376,28 +532,35 @@
     }
 
     function renderResults(results) {
+      var openKeys = {};
+      container.querySelectorAll('details[open][data-key]').forEach(function(d) {
+        openKeys[d.dataset.key] = true;
+      });
       container.replaceChildren();
       if (!results.length) {
         countEl.textContent = '';
-        container.appendChild(makeInfoMessage('No results found.'));
+        container.appendChild(makeInfoMessage(
+          searchInProgress ? 'Waiting for the first colleges to answer…' : 'No results found.'));
         return;
       }
+      var soFar = searchInProgress ? ' so far' : '';
 
       var filtered = [];
       for (var i = 0; i < results.length; i++) {
         var item = results[i];
-        if (statusEl.value === 'all' || availabilityKey(item.offered_this_term) === statusEl.value) {
+        if ((statusEl.value === 'all' || availabilityKey(item) === statusEl.value)
+            && coursePassesSectionFilters(item)) {
           filtered.push(item);
         }
       }
 
       if (!filtered.length) {
-        countEl.textContent = 'Showing 0 of ' + results.length + ' course(s)';
-        container.appendChild(makeInfoMessage('No matches for current availability filter.'));
+        countEl.textContent = 'Showing 0 of ' + results.length + ' course(s)' + soFar;
+        container.appendChild(makeInfoMessage('No matches for current filters.'));
         return;
       }
 
-      countEl.textContent = 'Showing ' + filtered.length + ' of ' + results.length + ' course(s)';
+      countEl.textContent = 'Showing ' + filtered.length + ' of ' + results.length + ' course(s)' + soFar;
 
       var grouped = {};
       for (var j = 0; j < filtered.length; j++) {
@@ -419,7 +582,7 @@
         var requirementName = requirementNames[reqIdx];
         var courses = grouped[requirementName];
         courses.sort(function(a, b) {
-          var rankDiff = availabilityRank(a.offered_this_term) - availabilityRank(b.offered_this_term);
+          var rankDiff = availabilityRank(a) - availabilityRank(b);
           if (rankDiff !== 0) return rankDiff;
           var ccDiff = a.cc_name.localeCompare(b.cc_name);
           if (ccDiff !== 0) return ccDiff;
@@ -502,11 +665,17 @@
           tr.appendChild(equivalentTd);
 
           var offeredTd = document.createElement('td');
-          offeredTd.appendChild(offeredBadgeEl(courseRow.offered_this_term));
+          offeredTd.appendChild(offeredBadgeEl(courseRow));
           tr.appendChild(offeredTd);
 
           var sectionsTd = document.createElement('td');
-          sectionsTd.appendChild(renderSectionsEl(courseRow.sections));
+          var sectionsEl = renderSectionsEl(courseRow.sections);
+          if (sectionsEl.nodeType === Node.ELEMENT_NODE) {
+            var sectionsKey = requirementName + '|' + courseRow.cc_id + '|' + courseRow.course_code;
+            sectionsEl.dataset.key = sectionsKey;
+            sectionsEl.open = !!openKeys[sectionsKey];
+          }
+          sectionsTd.appendChild(sectionsEl);
           tr.appendChild(sectionsTd);
 
           tbody.appendChild(tr);
@@ -545,36 +714,111 @@
     statusEl.addEventListener('change', function() {
       renderResults(lastResults);
     });
+    modalityEl.addEventListener('change', function() { renderResults(lastResults); });
+    fitEl.addEventListener('change', function() { renderResults(lastResults); });
+
+    function showProgress(done, total, message) {
+      progressEl.style.display = 'flex';
+      progressBar.max = Math.max(total, 1);
+      progressBar.value = total ? done : 1;
+      progressText.textContent = message;
+    }
+
+    function readNdjson(res, onEvent) {
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+      function emitLines(text) {
+        text.split('\n').forEach(function(line) {
+          if (line.trim()) onEvent(JSON.parse(line));
+        });
+      }
+      function pump() {
+        return reader.read().then(function(chunk) {
+          if (chunk.done) {
+            emitLines(buffer + decoder.decode());
+            return;
+          }
+          buffer += decoder.decode(chunk.value, { stream: true });
+          var cut = buffer.lastIndexOf('\n');
+          if (cut >= 0) {
+            emitLines(buffer.slice(0, cut));
+            buffer = buffer.slice(cut + 1);
+          }
+          return pump();
+        });
+      }
+      return pump();
+    }
+
+    function streamSearch(params) {
+      var total = 0;
+      var done = 0;
+      var finished = false;
+      function onEvent(ev) {
+        if (ev.type === 'start') {
+          total = ev.total;
+          lastResults = ev.results;
+          showProgress(0, total, total
+            ? 'Checking class schedules: 0 of ' + total + ' colleges done'
+            : 'No live class schedules to check');
+        } else if (ev.type === 'college') {
+          done = ev.done;
+          lastResults = lastResults.concat(ev.results);
+          showProgress(done, total, 'Checking class schedules: ' + done + ' of ' + total + ' colleges done');
+        } else if (ev.type === 'done') {
+          finished = true;
+          searchInProgress = false;
+          showProgress(total, total, 'Checked ' + total + ' college schedule(s)');
+        } else if (ev.type === 'error') {
+          finished = true;
+          searchInProgress = false;
+          showProgress(done, total, 'Stopped after ' + done + ' of ' + total + ' colleges');
+          showError('Search stopped partway: ' + ev.detail + ' Results so far are shown.');
+        }
+        renderResults(lastResults);
+      }
+      return fetch('/api/search/stream?' + params).then(function(res) {
+        if (!res.ok) {
+          return res.json().catch(function() { return {}; }).then(function(body) {
+            if (res.status === 409) {
+              throw new Error(body.detail || 'Run ASSIST ingest first.');
+            }
+            throw new Error(body.detail || 'HTTP ' + res.status);
+          });
+        }
+        return readNdjson(res, onEvent).then(function() {
+          if (!finished) {
+            throw new Error('the connection closed after ' + done + ' of ' + total +
+              ' colleges. Results so far are shown.');
+          }
+        });
+      });
+    }
 
     searchBtn.addEventListener('click', function() {
       clearError();
       searchBtn.disabled = true;
       searchBtn.textContent = 'Searching…';
-      container.innerHTML = '';
+      container.replaceChildren();
       countEl.textContent = '';
       lastResults = [];
+      searchInProgress = true;
+      showProgress(0, 1, 'Starting search…');
+      progressBar.value = 0;
       var params = 'school=' + encodeURIComponent(schoolEl.value) +
         '&major=' + encodeURIComponent(majorEl.value) +
         '&term=' + encodeURIComponent(termEl.value.trim());
       if (reqEl.value.trim()) params += '&requirement=' + encodeURIComponent(reqEl.value.trim());
-      fetch('/api/search?' + params)
-        .then(function(res) {
-          if (!res.ok) {
-            return res.json().catch(function() { return {}; }).then(function(body) {
-              if (res.status === 409) {
-                throw new Error(body.detail || 'Run ASSIST ingest first.');
-              }
-              throw new Error(body.detail || 'HTTP ' + res.status);
-            });
-          }
-          return res.json();
+      if (timezoneEl.value) params += '&tz=' + encodeURIComponent(timezoneEl.value);
+      streamSearch(params)
+        .catch(function(e) {
+          showError('Search failed: ' + e.message);
+          if (!lastResults.length) progressEl.style.display = 'none';
         })
-        .then(function(data) {
-          lastResults = data;
-          renderResults(lastResults);
-        })
-        .catch(function(e) { showError('Search failed: ' + e.message); })
         .finally(function() {
+          searchInProgress = false;
+          renderResults(lastResults);
           searchBtn.disabled = false;
           searchBtn.textContent = 'Search';
           updateSearchBtn();

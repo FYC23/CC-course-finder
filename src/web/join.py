@@ -21,6 +21,8 @@ class SearchResult:
     source_url: str
     academic_year: str
     agreement_id: str
+    # Why this term's schedule could not be checked; offered_this_term is then None.
+    lookup_error: str | None = None
 
 
 def join_results(
@@ -41,12 +43,14 @@ def join_results(
         requirements = list(dict.fromkeys(r.target_requirement for r in rows))
 
         avail = sched_index.get((cc_id, course_code))
+        lookup_error: str | None = None
         if avail is None:
             offered: bool | None = None
             sections: list[ParsedSection] = []
             schedule_source_url = ""
         else:
-            offered = avail.offered
+            lookup_error = avail.lookup_error
+            offered = None if lookup_error else avail.offered
             sections = avail.sections
             schedule_source_url = avail.source_url
 
@@ -63,6 +67,7 @@ def join_results(
             source_url=first.source_url,
             academic_year=first.academic_year,
             agreement_id=first.agreement_id,
+            lookup_error=lookup_error,
         ))
 
     return results

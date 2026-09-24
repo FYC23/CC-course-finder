@@ -1,0 +1,58 @@
+{
+  "cc_id": 71,
+  "cc_name": "Cypress College",
+  "version": 1,
+  "recorded_at": "2026-09-23",
+  "notes": "NOCCCD static JSON. terms.json maps labels to term codes (202610 = Fall 2026, 202620 = Winter/Spring 2027). sections.json is the whole district for the term; filter on sectCampCode 1 (Cypress) and a course number that may carry the campus letter C (150AC, 009 C). Titles are not in sections.json.",
+  "probe": { "course_code": "MATH 150AC", "term": "Fall 2026", "expect_min_rows": 1 },
+  "inputs": {},
+  "steps": [
+    {
+      "id": "terms",
+      "method": "GET",
+      "url": "https://schedule.nocccd.edu/data/terms.json",
+      "cache": true,
+      "captures": {
+        "term": { "lookup": { "rows": "$[*]", "label": "$.termDesc", "value": "$.termCode" }, "on_missing": "term_not_listed" }
+      }
+    },
+    {
+      "id": "sections",
+      "method": "GET",
+      "url": "https://schedule.nocccd.edu/data/{term}/sections.json",
+      "cache": true
+    }
+  ],
+  "extract": {
+    "kind": "json",
+    "rows": "$[*]",
+    "filter": [
+      { "value": "$.sectCampCode", "equals": "1" },
+      { "value": "$.sectSubjCode", "equals": "{subject}" },
+      { "value": "$.sectCrseNumb", "any_of": ["{number}", "{number}C"] }
+    ],
+    "fields": {
+      "section_id": "$.sectCrn",
+      "title": { "const": "" },
+      "instructor": "$.sectInstrName",
+      "seats_total": "$.sectMaxEnrl",
+      "seats_used": "$.sectEnrl",
+      "seats_available": "$.sectSeatsAvail",
+      "wait_capacity": "$.sectWaitCapacity",
+      "course_code_as_listed": { "join": ["$.sectSubjCode", "$.sectCrseNumb"] }
+    },
+    "status": { "from_seats": true },
+    "modality": { "tokens": ["$.sectMeetings[*].schdDesc"] },
+    "meetings": [
+      {
+        "each": "$.sectMeetings[*]",
+        "days": { "flags": ["$.monDay", "$.tueDay", "$.wedDay", "$.thuDay", "$.friDay", "$.satDay", "$.sunDay"] },
+        "start": "$.beginTime",
+        "end": "$.endTime",
+        "location": { "join": ["$.bldgCode", "$.roomCode"] },
+        "start_date": "$.startDate",
+        "end_date": "$.endDate"
+      }
+    ]
+  }
+}

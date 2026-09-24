@@ -35,6 +35,7 @@ Thumbs.db
 
 # Project: generated data & scraped artifacts (rebuild via pipeline)
 data/assist.sqlite3
+data/assist.sqlite3-*
 data/assist_artifacts/
 
 # Reference repos

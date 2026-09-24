@@ -6,7 +6,7 @@ One query: **which community college courses transfer** (via ASSIST) **and are o
 
 ![CC Course Finder search UI: filters for university, major, term, and availability; results grouped by UC requirement with CC courses and offered status](docs/images/web-ui.png)
 
-**Current status (v0.1):** tuned for UCLA CS; ASSIST ingest fairly complete, schedule coverage pilot (~8 community colleges).
+**Current status (v0.2):** tuned for UCLA CS; ASSIST ingest fairly complete; schedule coverage about 50 community colleges across Colleague, Banner 9, VSB, WVM, and nine replay-spec colleges.
 
 ## Quick start
 
@@ -132,10 +132,14 @@ Open `http://127.0.0.1:8000` and search by university, major, term, and optional
 
 Results UX notes:
 
+- Results stream in college by college, with a progress bar ("12 of 41 colleges done"). Colleges are checked in parallel, so a full search takes under a minute rather than tens of minutes. A college whose server refuses the connection is skipped for the rest of that search.
 - Grouped by UC requirement.
-- Sorted within each group by availability: Offered → Not offered → Articulation only.
+- Sorted within each group by availability: Offered → Not offered → Couldn't check → Articulation only.
 - Availability filter lets you show only one status.
+  - "Couldn't check" means the college's schedule site could not be read this time (server down or erroring, or the term isn't listed there); the row says why. It is not the same as "Not offered".
   - "Articulation only" means the course is articulated in ASSIST, but this term's schedule availability wasn't found for that CC/course.
+- Sections show meeting days, campus-local times, seats used/total, and a Fit badge computed for the timezone you pick (the page preselects your browser's timezone; choose "Don't check hours" to turn fit off). Daylight saving is applied on both the campus side and your side for each term date. Fit is `Fits`, `Conflicts`, `Async` (no set times, online), or `Unknown`.
+- Modality and Hours filters keep a course when at least one of its sections matches.
 
 ### Ingest and query (single-target v1)
 
@@ -191,20 +195,48 @@ Pilot set only; expect this list to expand.
 
 | College                       | `cc_id` | Adapter                                                       | Status      |
 | ----------------------------- | ------- | ------------------------------------------------------------- | ----------- |
-| Evergreen Valley College      | 2       | `banner` — Ellucian COLSS (`PostSearchCriteria` / `Sections`) | works       |
+| Evergreen Valley College      | 2       | `colleague_selfservice` — Ellucian Colleague portal           | works       |
 | West Valley College           | 80      | `wvm_static` — `schedule.wvm.edu` static JSON                 | works       |
-| Diablo Valley College         | 114     | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
-| Los Medanos College           | 61      | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
-| Contra Costa College          | 28      | `vsb_4cd` — VSB `api/class-data` XML                          | works       |
-| Mount San Antonio College     | 62      | `banner_ssb_classic` — old SSB REST API                       | works       |
-| City College of San Francisco | 33      | `banner_ssb_classic` — old SSB REST API (port 8105)           | works       |
-| Los Angeles City College      | 3       | `banner` — (LACCD schedule likely not Banner)                 | broken      |
-| College of Marin              | 4       | `marin_colleague` — public ASP.NET schedule grid              | works       |
-| College of San Mateo          | 5       | `smcccd_colleague` — SMCCD schedule API (`/courses`)          | needs creds |
+| Diablo Valley College         | 114     | `vsb_4cd` — VSB `api/class-data` XML                          | stale       |
+| Los Medanos College           | 61      | `vsb_4cd` — VSB `api/class-data` XML                          | stale       |
+| Contra Costa College          | 28      | `vsb_4cd` — VSB `api/class-data` XML                          | stale       |
+| Mount San Antonio College     | 62      | `banner9_ssb` — Banner 9 SSB portal                           | works       |
+| City College of San Francisco | 33      | `banner9_ssb` — Banner 9 SSB portal (port 8105)               | works       |
+| Los Angeles City College      | 3       | `colleague_selfservice` — (LACCD PeopleSoft, unsupported)     | unsupported |
+| College of Marin              | 4       | `marin_colleague` — (unsupported)                             | unsupported |
+| College of San Mateo          | 5       | `banner9_ssb` — SMCCD shared Banner 9 portal                  | works       |
+| Riverside City College        | 78      | `replay` — RCCD Class Finder OData (`data/specs/78.json`)     | works (codes drift; see note) |
+| Norco College                 | 148     | `replay` — RCCD Class Finder OData (`data/specs/148.json`)    | works (codes drift; see note) |
+| Moreno Valley College         | 149     | `replay` — RCCD Class Finder OData (`data/specs/149.json`)    | works (codes drift; see note) |
+| Cypress College               | 71      | `replay` — NOCCCD static JSON (`data/specs/71.json`)          | works       |
+| Fullerton College             | 134     | `replay` — NOCCCD static JSON (`data/specs/134.json`)         | works       |
+| American River College        | 27      | `replay` — Los Rios class search HTML (`data/specs/27.json`)  | works       |
+| Cosumnes River College        | 142     | `replay` — Los Rios class search HTML (`data/specs/142.json`) | works       |
+| Folsom Lake College           | 145     | `replay` — Los Rios class search HTML (`data/specs/145.json`) | works       |
+| Sacramento City College       | 126     | `replay` — Los Rios class search HTML (`data/specs/126.json`) | works       |
 
+Full catalog with per-district parameters: `src/schedule/data/colleges.json` (about 40 colleges as of Phase 1). Entries carry `status` (`active`, `stale`, `unsupported`) and `params` (`term_format`, `campus_codes`, `location_match`).
 
-`banner_ssb_classic` resolves term codes dynamically via `getTerms` (each institution uses a different numeric suffix scheme). Raw snippets only when `SCHEDULE_DEBUG_RAW_SUMMARY=1`.
+`banner9_ssb` resolves term codes dynamically; campus filtering applied where noted in catalog via `params` or `locations`.
 
 `vsb_4cd` uses the Visual Schedule Builder (`vsb.4cd.edu`) shared by Diablo Valley, Los Medanos, and Contra Costa colleges. Term codes are derived deterministically (`YYYY` + `10`/`20`/`30` for Summer/Fall/Spring). Campus filtering is applied per-block using the `locations` field.
 
-`smcccd_colleague` uses the documented SMCCD API surface. The public docs expose `/courses`, but live responses require Basic Auth credentials; configure `SMCCD_API_USERNAME` and `SMCCD_API_PASSWORD` to enable live schedule pulls.
+`colleague_selfservice` uses Ellucian's Colleague self-service portal with per-district discovery of location and term codes.
+
+`replay` is a data-driven adapter: each college has a JSON spec at `src/schedule/data/specs/<cc_id>.json` describing up to five HTTP steps (with placeholders such as `{term}`, `{subject}`, `{number}`, values captured from earlier responses, optional caching and bounded pagination) and an extraction block that maps JSON paths or CSS selectors to sections and meetings. Specs are validated against `src/schedule/replay/schema.json` at load. Check them with:
+
+```bash
+uv run python -m src.schedule.replay.cli validate
+```
+
+Run one college's spec live, or probe every spec with its recorded probe course:
+
+```bash
+uv run python -m src.schedule.replay.cli run --cc-id 27 --term "Fall 2026" --course "MATH 400"
+```
+
+```bash
+uv run python -m src.schedule.replay.cli probe
+```
+
+Note on the Riverside district: ASSIST still lists pre-common-course-numbering codes (`MAT 1B`) while the live schedule uses `MATH-C2220`, so those rows show "Not offered" until course aliases land in Phase 3.

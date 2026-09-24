@@ -302,3 +302,26 @@ def test_discover_major_agreements_limits_unique_ccs_not_raw_candidates() -> Non
     assert len(refs) == 1
     assert refs[0].cc_id == 54
 
+
+
+class SlimCandidateClient(FakeClient):
+    """ASSIST's current agreements endpoint: no isCommunityCollege, no parent name."""
+
+    def _get_json(self, path: str) -> Any:
+        if path == "/api/institutions/11/agreements":
+            return [
+                {"institutionParentId": 54, "sendingYearIds": [75], "receivingYearIds": []},
+                {"institutionParentId": 11, "sendingYearIds": [75], "receivingYearIds": []},
+            ]
+        return super()._get_json(path)
+
+
+def test_discover_major_agreements_reads_cc_flag_from_institutions() -> None:
+    discovery = AssistDiscovery(client=SlimCandidateClient())
+    refs = discovery.discover_major_agreements(
+        target_school_name="University of California, Los Angeles",
+        major_name="Computer Science",
+    )
+    assert [(ref.cc_id, ref.cc_name, ref.agreement_id) for ref in refs] == [
+        (54, "De Anza College", "12345678")
+    ]

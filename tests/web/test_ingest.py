@@ -242,6 +242,32 @@ def test_search_allowed_with_data(client: TestClient) -> None:
     assert "X-ASSIST-Staleness" in res.headers
 
 
+def test_search_stream_sends_staleness_header(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import src.web.routers.search as search_router
+    from src.schedule.service import QueryPlan
+    from src.schedule.term import parse_term_label
+
+    class _NoLiveColleges:
+        def plan(self, **kwargs):  # type: ignore[no-untyped-def]
+            return QueryPlan(term=parse_term_label(kwargs["term_label"]), colleges=())
+
+        def iter_results(self, plan):  # type: ignore[no-untyped-def]
+            return iter(())
+
+    start = client.post(
+        "/api/ingest",
+        json={"target_school": "UCLA", "target_major": "Computer Science"},
+    )
+    _wait_until_complete(client, start.json()["job_id"])
+    monkeypatch.setattr(search_router, "_get_service", lambda: _NoLiveColleges())
+
+    res = client.get("/api/search/stream?school=UCLA&major=Computer+Science&term=Spring+2026")
+    assert res.status_code == 200
+    assert "X-ASSIST-Staleness" in res.headers
+
+
 def test_start_ingest_logs_unhandled_executor_failure(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

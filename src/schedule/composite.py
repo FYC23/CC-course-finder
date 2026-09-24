@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from .banner_ellucian import BannerEllucianProvider
-from .banner_ssb_classic import BannerSsbClassicProvider
+from .colleague_selfservice import ColleagueSelfServiceProvider
+from .banner9_ssb import Banner9SsbProvider
+from .generic_replay import GenericReplayProvider
 from .marin_colleague import MarinColleagueProvider
 from .models import CollegeScheduleSource, CourseAvailability
 from .providers import ScheduleProvider
@@ -29,10 +30,11 @@ class CompositeProvider:
 
 def build_composite_provider() -> CompositeProvider:
     return CompositeProvider([
-        BannerEllucianProvider(),
-        BannerSsbClassicProvider(),
+        ColleagueSelfServiceProvider(),
+        Banner9SsbProvider(),
         WvmStaticProvider(),
         Vsb4cdProvider(),
         MarinColleagueProvider(),
         SmcccdColleagueProvider(),
+        GenericReplayProvider(),
     ])

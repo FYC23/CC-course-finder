@@ -10,8 +10,8 @@ from .term import ParsedTerm
 _SEASON_CODE = {"spring": "30", "summer": "50", "fall": "70"}
 
 _MODALITY_MAP = {
-    "AON": "online",
-    "SON": "online",
+    "AON": "async_online",
+    "SON": "sync_online",
     "INP": "in_person",
     "HYB": "hybrid",
     "FLX": "hybrid",

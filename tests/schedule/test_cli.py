@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import time
 from pathlib import Path
 
 import requests
@@ -10,6 +11,7 @@ from src.assist.models import ArticulationRow, IngestRun
 from src.assist.store import ensure_db, save_rows, save_run
 from src.schedule import cli as schedule_cli
 from src.schedule.composite import CompositeProvider
+from src.schedule.models import CourseAvailability, Meeting, ParsedSection
 
 _RUNNER = CliRunner()
 _BASE_ARGS = [
@@ -31,7 +33,7 @@ def test_cli_rejects_invalid_cc_id() -> None:
 
 def test_cli_exits_code_2_on_bad_term(monkeypatch) -> None:
     class _FakeService:
-        def __init__(self, db_path, provider) -> None:
+        def __init__(self, db_path, provider_factory) -> None:
             pass
 
         def query(self, **kwargs):
@@ -45,7 +47,7 @@ def test_cli_exits_code_2_on_bad_term(monkeypatch) -> None:
 
 def test_cli_exits_code_1_when_service_raises_request_exception(monkeypatch) -> None:
     class _FakeService:
-        def __init__(self, db_path, provider) -> None:
+        def __init__(self, db_path, provider_factory) -> None:
             pass
 
         def query(self, **kwargs):
@@ -112,6 +114,57 @@ def test_cli_returns_fail_soft_row_on_provider_request_error(monkeypatch, tmp_pa
     assert payload[0]["raw_summary"] == "[request_error type=RequestException]"
 
 
+def test_cli_serializes_meeting_times_as_json(monkeypatch, tmp_path: Path) -> None:
+    """Regression: Meeting gained datetime.time/date fields, so the plain
+    json.dumps([asdict(row) for row in rows]) call raised
+    TypeError: Object of type time is not JSON serializable for any real result."""
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_row(db_path)
+    monkeypatch.setattr(schedule_cli, "DB_PATH", db_path)
+
+    section = ParsedSection(
+        section_id="123",
+        status="open",
+        modality="in_person",
+        title="Calculus II",
+        instructor="Ada Lovelace",
+        meetings=(
+            Meeting(
+                days=("M", "W"),
+                start_local=time(10, 45),
+                end_local=time(12, 0),
+                location="Room 1",
+            ),
+        ),
+    )
+
+    class _StubProvider:
+        def supports_source(self, source) -> bool:
+            return True
+
+        def search_course(self, *, source, term, course_code):
+            return CourseAvailability(
+                cc_id=source.cc_id,
+                cc_name=source.cc_name,
+                term=term.label,
+                course_code=course_code,
+                offered=True,
+                sections=[section],
+                source_url="https://example.edu",
+            )
+
+    monkeypatch.setattr(
+        schedule_cli,
+        "build_composite_provider",
+        lambda: CompositeProvider([_StubProvider()]),
+    )
+    result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-id", "2"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload[0]["sections"][0]["meetings"][0]["start_local"] == "10:45:00"
+
+
 def test_cli_rejects_unsupported_source_system(monkeypatch) -> None:
     class _FakeProvider:
         def supports_source(self, source) -> bool:
@@ -124,7 +177,8 @@ def test_cli_rejects_unsupported_source_system(monkeypatch) -> None:
     )
     result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-id", "2"])
     assert result.exit_code == 2
-    assert "No provider configured for source system='banner'" in result.output
+    assert "No provider configured for source" in result.output
+    assert "colleague_selfservice" in result.output
 
 
 def test_cli_all_ccs_passes_none_cc_id(monkeypatch, tmp_path: Path) -> None:
@@ -135,7 +189,7 @@ def test_cli_all_ccs_passes_none_cc_id(monkeypatch, tmp_path: Path) -> None:
     received_cc_ids: list[int | None] = []
 
     class _SpyService:
-        def __init__(self, db_path, provider) -> None:
+        def __init__(self, db_path, provider_factory) -> None:
             pass
 
         def query(self, *, cc_id, **kwargs):
@@ -157,7 +211,7 @@ def test_cli_cc_name_resolves_to_cc_id(monkeypatch, tmp_path: Path) -> None:
     received_cc_ids: list[int | None] = []
 
     class _SpyService:
-        def __init__(self, db_path, provider) -> None:
+        def __init__(self, db_path, provider_factory) -> None:
             pass
 
         def query(self, *, cc_id, **kwargs):
@@ -181,3 +235,25 @@ def test_cli_cc_name_and_cc_id_mutually_exclusive() -> None:
     result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-name", "evergreen", "--cc-id", "2"])
     assert result.exit_code == 2
     assert "mutually exclusive" in result.output
+
+
+def test_cli_looks_colleges_up_in_parallel(monkeypatch, tmp_path: Path) -> None:
+    """The CLI hands the service a provider factory (one provider per college), not one
+    shared provider, so colleges are looked up at the same time."""
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_row(db_path)
+    monkeypatch.setattr(schedule_cli, "DB_PATH", db_path)
+    received: dict[str, object] = {}
+
+    class _SpyService:
+        def __init__(self, db_path, provider_factory) -> None:
+            received["factory"] = provider_factory
+
+        def query(self, **kwargs):
+            return []
+
+    monkeypatch.setattr(schedule_cli, "ScheduleService", _SpyService)
+    result = _RUNNER.invoke(schedule_cli.app, _BASE_ARGS)
+
+    assert result.exit_code == 0
+    assert received["factory"] is schedule_cli.build_composite_provider
