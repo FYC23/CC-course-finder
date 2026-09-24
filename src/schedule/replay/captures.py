@@ -21,6 +21,7 @@ from ..term import ParsedTerm, TermNotListedError, term_match_rank
 from .inputs import render
 from .jsonpath import first, resolve
 from .spec import Capture
+from .text import element_text, stringify
 
 
 def evaluate_capture(
@@ -38,7 +39,7 @@ def evaluate_capture(
     elif capture.kind == "regex":
         found = _regex(render(capture.arg, values), response_text)
     elif capture.kind == "json":
-        found = _stringify(first(_json(response_text, step_id), capture.arg))
+        found = stringify(first(_json(response_text, step_id), capture.arg))
     elif capture.kind == "css":
         found = _css(capture, response_text)
     else:
@@ -85,37 +86,17 @@ def _css(capture: Capture, text: str) -> str | None:
     element = BeautifulSoup(text, "html.parser").select_one(capture.arg)
     if element is None:
         return None
-    if capture.attr:
-        return _attr_value(element.get(capture.attr))
-    return " ".join(element.get_text(" ").split())
-
-
-def _attr_value(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return " ".join(value)
-    return str(value)
+    return element_text(element, capture.attr)
 
 
 def _lookup(capture: Capture, doc: Any, term: ParsedTerm) -> str | None:
     best: tuple[int, str] | None = None
     for row in resolve(doc, capture.arg):
-        label = _stringify(first(row, capture.lookup_label or "$"))
+        label = stringify(first(row, capture.lookup_label or "$"))
         rank = term_match_rank(term, label) if label else None
         if rank is None:
             continue
-        value = _stringify(first(row, capture.lookup_value or "$"))
+        value = stringify(first(row, capture.lookup_value or "$"))
         if value and (best is None or rank < best[0]):
             best = (rank, value)
     return best[1] if best else None
-
-
-def _stringify(value: Any) -> str:
-    if value is None or value is False:
-        return ""
-    if value is True:
-        return "true"
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    return str(value).strip()
