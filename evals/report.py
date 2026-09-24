@@ -10,9 +10,22 @@ from src.llm.model import CallRecord
 
 from .metrics import binary_metrics, calibration, choice_metrics, threshold_sweep
 
+# The directory containing the `evals` package, i.e. the repo root.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 def _pct(value: float | None) -> str:
     return "n/a" if value is None else f"{value * 100:.1f}%"
+
+
+def _display_path(data_path: Path) -> str:
+    """The data path relative to the repo root when it lies under it (so a committed
+    results file reads e.g. `evals/data/course_equivalent.jsonl`, not `/Users/...`);
+    otherwise the given path as-is."""
+    try:
+        return Path(data_path).resolve().relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return str(data_path)
 
 
 def _usage(records: Sequence[CallRecord]) -> list[str]:
@@ -34,7 +47,7 @@ def _usage(records: Sequence[CallRecord]) -> list[str]:
 
 def _header(question: str, label: str, data_path: Path, today: date, cases: int, errors: Sequence) -> list[str]:
     return [f"# {question} eval: {label}", "", f"Date: {today.isoformat()}  ",
-            f"Data: `{data_path}` ({cases} cases, {len(errors)} errors)", ""]
+            f"Data: `{_display_path(data_path)}` ({cases} cases, {len(errors)} errors)", ""]
 
 
 def _errors(errors: Sequence[tuple[str, str]]) -> list[str]:
