@@ -47,16 +47,24 @@ def specs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return loaded
 
 
-def test_validate_reports_count(specs):
+def _fail_if_called():
+    raise AssertionError("validate must load strictly, not through the cached runtime loader")
+
+
+def test_validate_reports_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    (tmp_path / "78.json").write_text(json.dumps(_SPEC))
+    monkeypatch.setattr(replay_cli, "SPECS_DIR", tmp_path)
+    monkeypatch.setattr(replay_cli, "load_all_specs", _fail_if_called)
     result = runner.invoke(replay_cli.app, ["validate"])
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     assert "1 spec(s) valid" in result.stdout
 
 
 def test_validate_reports_bad_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    (tmp_path / "78.json").write_text(json.dumps(_SPEC))
     (tmp_path / "1.json").write_text("{}")
     monkeypatch.setattr(replay_cli, "SPECS_DIR", tmp_path)
-    monkeypatch.setattr(replay_cli, "load_all_specs", lambda: replay_cli.load_specs_from(tmp_path))
+    monkeypatch.setattr(replay_cli, "load_all_specs", _fail_if_called)
     result = runner.invoke(replay_cli.app, ["validate"])
     assert result.exit_code == 1
     assert "1.json" in result.output

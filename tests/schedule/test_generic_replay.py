@@ -6,7 +6,7 @@ from types import MappingProxyType
 
 import pytest
 
-from src.schedule.errors import PortalChanged
+from src.schedule.errors import PortalChanged, ScheduleLookupError, SpecUnavailable
 from src.schedule.generic_replay import GenericReplayProvider
 from src.schedule.models import CollegeScheduleSource
 from src.schedule.replay.executor import HostThrottle, ReplayExecutor
@@ -43,12 +43,20 @@ def _provider(spec, session: FakeSession) -> GenericReplayProvider:
     return GenericReplayProvider(executor=executor, specs=MappingProxyType({999: spec}))
 
 
-def test_supports_only_replay_sources_with_a_spec(spec):
+def test_supports_every_replay_source(spec):
     provider = _provider(spec, FakeSession({}))
     assert provider.supports_source(_SOURCE)
     assert not provider.supports_source(_OTHER)
     unknown = CollegeScheduleSource(cc_id=1, cc_name="X", system="replay", base_url="https://x", locations=())
-    assert not provider.supports_source(unknown)
+    assert provider.supports_source(unknown)
+
+
+def test_replay_source_without_a_spec_raises_spec_unavailable(spec):
+    unknown = CollegeScheduleSource(cc_id=1, cc_name="X", system="replay", base_url="https://x", locations=())
+    with pytest.raises(SpecUnavailable, match="cc_id=1") as info:
+        _provider(spec, FakeSession({})).search_course(source=unknown, term=_FALL, course_code="MATH 1")
+    assert isinstance(info.value, ScheduleLookupError)
+    assert "/" not in str(info.value)
 
 
 def test_search_course_returns_sections(spec):

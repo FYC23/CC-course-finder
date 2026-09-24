@@ -63,7 +63,7 @@ Queries live CC schedule systems to check if articulated courses are offered in 
 - `term.py` — parses term labels like `"Summer 2026"` into provider-specific formats
 - `errors.py` — `ScheduleLookupError`, `PortalChanged` (portal answered in an unexpected shape), `SpecInvalid`
 - `generic_replay.py` — `GenericReplayProvider`: `ScheduleProvider` for `system == "replay"`; replays the college's spec from `data/specs/<cc_id>.json` and is registered last in `CompositeProvider`
-- `replay/` — the replay engine: `spec.py` (frozen model + `schema.json` validation + semantic checks), `registry.py` (loads all specs once, fails fast), `inputs.py` (placeholders like `{term}`, `{subject}`, `{number}`), `captures.py` (cookie/regex/json/css/term-lookup), `executor.py` (steps, per-instance cache, bounded pagination, per-host throttle, one retry), `extractor.py` (JSON or HTML rows to `ParsedSection`), `text.py` (shared `stringify`/`element_text` helpers used by `captures.py` and `extractor.py`), `jsonpath.py` (tiny JSONPath subset), `cli.py`
+- `replay/` — the replay engine: `spec.py` (frozen model + `schema.json` validation + semantic checks), `registry.py` (loads all specs once; at runtime an invalid spec is skipped and logged, while the test suite and `cli validate` load strictly and fail fast), `inputs.py` (placeholders like `{term}`, `{subject}`, `{number}`), `captures.py` (cookie/regex/json/css/term-lookup), `executor.py` (steps, per-instance cache, bounded pagination, per-host throttle, one retry), `extractor.py` (JSON or HTML rows to `ParsedSection`), `text.py` (shared `stringify`/`element_text` helpers used by `captures.py` and `extractor.py`), `jsonpath.py` (tiny JSONPath subset), `cli.py`
 
 **Scrapers** (each implements `ScheduleProvider`):
 - `colleague_selfservice.py` — Ellucian Colleague Self-Service (`/Student/Courses`, ~30 CA CCs); term codes resolved from the portal's `TermFilters`, per-district overrides in `params`
@@ -94,7 +94,7 @@ FastAPI app serving a search UI.
 
 **Provider pattern:** Adding a new CC schedule system = implement `ScheduleProvider` protocol + register in `CompositeProvider`. No other changes needed.
 
-**Replay specs are data, not code:** a spec is a schema-validated JSON file of at most five HTTP steps plus an extraction block. No loops, conditionals, JavaScript, or login. Pagination is a declared, bounded primitive. Invalid specs fail at load, and `tests/schedule/replay/test_specs_registry.py` requires every `"system": "replay"` catalog entry to have a spec with the same `cc_id` and name.
+**Replay specs are data, not code:** a spec is a schema-validated JSON file of at most five HTTP steps plus an extraction block. No loops, conditionals, JavaScript, or login. Pagination is a declared, bounded primitive. At runtime an invalid spec is skipped and logged (that college shows "Couldn't check"; every other college still works); the test suite and `cli validate` fail fast on it. `tests/schedule/replay/test_specs_registry.py` requires every `"system": "replay"` catalog entry to have a spec with the same `cc_id` and name.
 
 **Course-code drift is a Phase 3 problem:** Riverside district specs send ASSIST codes as-is (`MAT-1B`), which no longer match live codes (`MATH-C2220`); those courses show "Not offered" until the alias table lands.
 

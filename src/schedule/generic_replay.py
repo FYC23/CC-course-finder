@@ -12,6 +12,7 @@ from types import MappingProxyType
 
 import requests
 
+from .errors import SpecUnavailable
 from .models import CollegeScheduleSource, CourseAvailability
 from .replay.executor import ReplayExecutor
 from .replay.extractor import extract_sections
@@ -35,7 +36,7 @@ class GenericReplayProvider:
         self._specs = specs if specs is not None else load_all_specs()
 
     def supports_source(self, source: CollegeScheduleSource) -> bool:
-        return source.system == REPLAY_SYSTEM and source.cc_id in self._specs
+        return source.system == REPLAY_SYSTEM
 
     def search_course(
         self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str
@@ -44,7 +45,9 @@ class GenericReplayProvider:
             raise ValueError(
                 f"GenericReplayProvider does not support system={source.system!r} cc_id={source.cc_id}"
             )
-        spec = self._specs[source.cc_id]
+        spec = self._specs.get(source.cc_id)
+        if spec is None:
+            raise SpecUnavailable(f"no valid replay spec is loaded for cc_id={source.cc_id}")
         values = build_values(spec.inputs, term, course_code)
         result = self._executor.execute(spec, term=term, values=values)
         scope = MappingProxyType({**values, **result.captures})

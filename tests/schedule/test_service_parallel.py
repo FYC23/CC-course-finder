@@ -257,3 +257,11 @@ def test_portal_changed_has_a_student_facing_reason() -> None:
     reason = _lookup_error_reason(PortalChanged("rows path not found"), _parse_term("Fall 2026"))
     assert reason == "The college's schedule site changed; this lookup needs to be re-recorded."
     assert "rows path" not in reason
+
+
+def test_spec_unavailable_has_a_student_facing_reason() -> None:
+    from src.schedule.errors import SpecUnavailable
+
+    reason = _lookup_error_reason(SpecUnavailable("no replay spec loaded for cc_id=78"), _parse_term("Fall 2026"))
+    assert reason == "This college's schedule lookup is unavailable right now."
+    assert "cc_id" not in reason

@@ -35,9 +35,9 @@ def main() -> None:
 
 @app.command()
 def validate() -> None:
-    """Load every spec under src/schedule/data/specs and report the first invalid one."""
+    """Load every spec under src/schedule/data/specs strictly and report the first invalid one."""
     try:
-        specs = load_all_specs()
+        specs = load_specs_from(SPECS_DIR)
     except SpecInvalid as err:
         typer.echo(f"INVALID: {err}", err=True)
         raise typer.Exit(code=1) from err

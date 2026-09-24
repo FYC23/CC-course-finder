@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 import requests
 
 from .catalog import get_college_source
-from .errors import PortalChanged
+from .errors import PortalChanged, SpecUnavailable
 from .models import CollegeScheduleSource, CourseAvailability
 from .providers import ScheduleProvider
 from .term import ParsedTerm, TermNotListedError, parse_term_label
@@ -259,6 +259,8 @@ def _lookup_error_reason(err: Exception, term: ParsedTerm) -> str:
         return "The college's schedule server returned an error."
     if isinstance(err, TermNotListedError):
         return f"{term.label} isn't listed on the college's schedule site."
+    if isinstance(err, SpecUnavailable):
+        return "This college's schedule lookup is unavailable right now."
     if isinstance(err, PortalChanged):
         return "The college's schedule site changed; this lookup needs to be re-recorded."
     return "Something went wrong reading the college's schedule."
