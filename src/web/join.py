@@ -29,6 +29,14 @@ class SearchResult:
     match_status: str | None = None
 
 
+def _match_fields(avail: CourseAvailability | None) -> tuple[str | None, str | None, str | None]:
+    """The alias-match fields for a search result: (matched_code, match_source,
+    match_status), all None when there is no result or it wasn't found via an alias."""
+    if avail is None or not avail.matched_code:
+        return None, None, None
+    return avail.matched_code, avail.match_source, avail.match_status
+
+
 def join_results(
     artic_rows: list[ArticulationRow],
     schedule_results: list[CourseAvailability],
@@ -48,7 +56,6 @@ def join_results(
 
         avail = sched_index.get((cc_id, course_code))
         lookup_error: str | None = None
-        matched: CourseAvailability | None = None
         if avail is None:
             offered: bool | None = None
             sections: list[ParsedSection] = []
@@ -58,7 +65,7 @@ def join_results(
             offered = None if lookup_error else avail.offered
             sections = avail.sections
             schedule_source_url = avail.source_url
-            matched = avail if avail.matched_code else None
+        matched_code, match_source, match_status = _match_fields(avail)
 
         results.append(SearchResult(
             cc_name=first.cc_name,
@@ -74,9 +81,9 @@ def join_results(
             academic_year=first.academic_year,
             agreement_id=first.agreement_id,
             lookup_error=lookup_error,
-            matched_code=matched.matched_code if matched else None,
-            match_source=matched.match_source if matched else None,
-            match_status=matched.match_status if matched else None,
+            matched_code=matched_code,
+            match_source=match_source,
+            match_status=match_status,
         ))
 
     return results
