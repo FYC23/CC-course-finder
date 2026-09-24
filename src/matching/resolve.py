@@ -88,6 +88,13 @@ class CourseResolver:
         non_assist = tuple(c for c in _unique(candidates) if code_key(c.code) != assist_key)
         return non_assist[: MAX_LOOKUPS_PER_COURSE - 1] + (LiveCode(course_code),)
 
+    def has_alias(self, cc_id: int, course_code: str) -> bool:
+        """True when a course-level alias exists for the code or one of its renamed spellings."""
+        return any(
+            self._aliases.get((cc_id, code_key(spelling)))
+            for spelling, _ in self._spellings(cc_id, course_code)
+        )
+
     def renamed_subjects(self, cc_id: int, subject: str) -> tuple[str, ...]:
         return tuple(r.new_subject for r in self._renames.get((cc_id, subject_key(subject)), ()))
 

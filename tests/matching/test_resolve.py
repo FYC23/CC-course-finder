@@ -76,6 +76,12 @@ def test_duplicates_by_key_are_dropped_and_list_is_capped():
     assert len(codes) == resolve.MAX_LOOKUPS_PER_COURSE
 
 
+def test_has_alias_ignores_bare_renames():
+    resolver = CourseResolver(aliases=_SEED, renames=_RENAMES)
+    assert resolver.has_alias(78, "MAT 1B") and resolver.has_alias(78, "ENG 1B")
+    assert not resolver.has_alias(78, "MAT 1C")
+
+
 def test_renamed_subjects():
     resolver = CourseResolver(renames=_RENAMES)
     assert resolver.renamed_subjects(78, "mat") == ("MATH",)
