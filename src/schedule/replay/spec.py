@@ -8,8 +8,7 @@ and raises ``SpecInvalid`` naming the file and field on any failure.
 from __future__ import annotations
 
 import json
-import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -18,14 +17,10 @@ import jsonschema
 from jsonschema.exceptions import best_match
 
 from ..errors import SpecInvalid
+from .checks import check_semantics
 
 _SCHEMA_PATH = Path(__file__).parent / "schema.json"
 _SCHEMA: dict = json.loads(_SCHEMA_PATH.read_text())
-_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
-
-BUILTIN_PLACEHOLDERS: frozenset[str] = frozenset(
-    {"course_code", "subject", "number", "term_label", "yyyy", "yy", "season", "Season"}
-)
 FIELD_NAMES: tuple[str, ...] = (
     "section_id",
     "title",
@@ -177,7 +172,7 @@ def load_spec(path: Path) -> ReplaySpec:
     if error is not None:
         raise SpecInvalid(f"{path}: {error.json_path}: {error.message}")
     spec = _build(raw, str(path))
-    _check_semantics(spec)
+    check_semantics(spec)
     return spec
 
 
@@ -318,121 +313,3 @@ def _extract(raw: dict, kind: str) -> Extract:
         modality_map=MappingProxyType({k.lower(): v for k, v in modality.get("map", {}).items()}),
         meetings=tuple(_meeting(m, kind) for m in raw.get("meetings", [])),
     )
-
-
-# --- semantic checks ------------------------------------------------------------------
-
-
-def _check_semantics(spec: ReplaySpec) -> None:
-    where = spec.source_path
-    if spec.extract.kind == "json" and not spec.extract.rows.endswith("[*]"):
-        raise SpecInvalid(f"{where}: extract.rows must end with [*] for kind=json")
-    for step in spec.steps[:-1]:
-        if step.paginate is not None:
-            raise SpecInvalid(f"{where}: step {step.id!r}: paginate is only allowed on the last step")
-    last = spec.steps[-1]
-    if last.paginate is not None and last.paginate.total_capture not in last.captures:
-        raise SpecInvalid(
-            f"{where}: paginate.total_capture {last.paginate.total_capture!r} "
-            f"is not a capture of step {last.id!r}"
-        )
-    _check_placeholders(spec)
-    _check_rule_kinds(spec)
-
-
-def _placeholders(text: str) -> set[str]:
-    return set(_PLACEHOLDER_RE.findall(text))
-
-
-def _step_templates(step: Step) -> list[str]:
-    templates = [step.url, *step.query.values(), *step.form.values(), *step.headers.values()]
-    templates.extend(_string_leaves(step.json_body or {}))
-    templates.extend(c.arg for c in step.captures.values() if c.kind == "regex")
-    return templates
-
-
-def _string_leaves(value: object) -> list[str]:
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, Mapping):
-        return [leaf for v in value.values() for leaf in _string_leaves(v)]
-    if isinstance(value, (list, tuple)):
-        return [leaf for v in value for leaf in _string_leaves(v)]
-    return []
-
-
-def _check_placeholders(spec: ReplaySpec) -> None:
-    known = set(BUILTIN_PLACEHOLDERS) | set(spec.inputs.named)
-    if spec.inputs.term is not None:
-        known.add("term")
-        _require_known(spec, spec.inputs.term.format, known - {"term"} | {"SEASON"}, "inputs.term.format")
-    for step in spec.steps:
-        for template in _step_templates(step):
-            _require_known(spec, template, known, f"step {step.id!r}")
-        known = known | set(step.captures)
-    for index, rule in enumerate(spec.extract.filters):
-        for template in ([rule.equals] if rule.equals is not None else list(rule.any_of)):
-            _require_known(spec, template, known, f"extract.filter[{index}]")
-
-
-def _require_known(spec: ReplaySpec, template: str, known: set[str], where: str) -> None:
-    unknown = _placeholders(template) - known
-    if unknown:
-        names = ", ".join(sorted(unknown))
-        raise SpecInvalid(f"{spec.source_path}: {where}: unknown placeholder(s) {names}")
-
-
-def _walk_rules(extract: Extract) -> Iterator[ValueRule]:
-    yield from extract.fields.values()
-    yield from (f.value for f in extract.filters)
-    if extract.status is not None:
-        yield extract.status
-    yield from extract.modality_tokens
-    for meeting in extract.meetings:
-        yield from meeting.day_flags
-        for rule in (
-            meeting.day_text, meeting.time_text, meeting.start, meeting.end,
-            meeting.location, meeting.start_date, meeting.end_date,
-        ):
-            if rule is not None:
-                yield rule
-
-
-def _flatten(rule: ValueRule) -> Iterator[ValueRule]:
-    yield rule
-    for part in rule.join:
-        yield from _flatten(part)
-
-
-def _rule_sources(rule: ValueRule) -> list[str]:
-    """Which of path/css/const/join this rule sets. ``const`` counts when it is not
-    ``None`` (an empty string is a valid constant, not an absent one); ``join`` counts
-    when it is non-empty. ``path``/``css`` stay truthy checks since the schema gives
-    both ``minLength: 1``, so an empty string can never reach here for those two."""
-    sources = []
-    if rule.path:
-        sources.append("path")
-    if rule.css:
-        sources.append("css")
-    if rule.const is not None:
-        sources.append("const")
-    if rule.join:
-        sources.append("join")
-    return sources
-
-
-def _check_rule_kinds(spec: ReplaySpec) -> None:
-    kind = spec.extract.kind
-    for top in _walk_rules(spec.extract):
-        for rule in _flatten(top):
-            sources = _rule_sources(rule)
-            if len(sources) != 1:
-                raise SpecInvalid(
-                    f"{spec.source_path}: value rule needs exactly one of path/css/const/join: {rule}"
-                )
-            if kind == "json" and (rule.css or rule.attr):
-                raise SpecInvalid(f"{spec.source_path}: css/attr rules are not allowed in a json spec")
-            if kind == "html" and rule.path:
-                raise SpecInvalid(f"{spec.source_path}: path rules are not allowed in an html spec")
-    if kind == "json" and spec.extract.marker:
-        raise SpecInvalid(f"{spec.source_path}: extract.marker is only for html specs")
