@@ -202,5 +202,20 @@
    "base_url": "https://mycollege-guest.laccd.edu", "locations": [],
    "source_url": "https://www.lacitycollege.edu/academics/class-schedules",
    "status": "unsupported",
-   "note": "LACCD PeopleSoft behind SSO and Azure WAF; no anonymous adapter possible. System value is a placeholder so the entry validates."}
+   "note": "LACCD PeopleSoft behind SSO and Azure WAF; no anonymous adapter possible. System value is a placeholder so the entry validates."},
+  {"cc_id": 78, "cc_name": "Riverside City College", "system": "replay",
+   "base_url": "https://apps-studentrcc.msappproxy.net", "locations": [],
+   "source_url": "https://www.rcc.edu/admissions/schedule-of-classes.html",
+   "provenance": {"method": "manual", "verified_at": "2026-09-23", "probe_course": "MATH-C2220"},
+   "note": "Replay spec 78.json (RCCD Class Finder OData). ASSIST codes (MAT 1B) predate common course numbering (MATH-C2220); exact lookups return no rows until Phase 3 aliases."},
+  {"cc_id": 148, "cc_name": "Norco College", "system": "replay",
+   "base_url": "https://apps-studentrcc.msappproxy.net", "locations": [],
+   "source_url": "https://www.norcocollege.edu/admissions/schedule/index.html",
+   "provenance": {"method": "manual", "verified_at": "2026-09-23", "probe_course": "MATH-C2220"},
+   "note": "Replay spec 148.json (RCCD Class Finder OData, list ScheduleData_NOR). Same numbering caveat as Riverside City College."},
+  {"cc_id": 149, "cc_name": "Moreno Valley College", "system": "replay",
+   "base_url": "https://apps-studentrcc.msappproxy.net", "locations": [],
+   "source_url": "https://www.mvc.edu/admissions/schedule-of-classes.html",
+   "provenance": {"method": "manual", "verified_at": "2026-09-23", "probe_course": "MATH-C2220"},
+   "note": "Replay spec 149.json (RCCD Class Finder OData, list ScheduleData_MOV). Same numbering caveat as Riverside City College."}
 ]

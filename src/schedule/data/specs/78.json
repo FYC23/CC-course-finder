@@ -1,0 +1,65 @@
+{
+  "cc_id": 78,
+  "cc_name": "Riverside City College",
+  "version": 1,
+  "recorded_at": "2026-09-23",
+  "notes": "RCCD Class Finder: anonymous SharePoint OData list per campus (RIV/NOR/MOV). Term codes verified: 26FAL, 26SUM, 26SPR. Whole-subject result sets are under 100 rows, so $top=500 needs no paging. ASSIST codes like MAT 1B differ from live codes like MATH-C2220 until Phase 3 aliases.",
+  "probe": { "course_code": "MATH-C2220", "term": "Fall 2026", "expect_min_rows": 1 },
+  "inputs": {
+    "term": { "format": "{yy}{SEASON}", "seasons": { "fall": "FAL", "spring": "SPR", "summer": "SUM" } },
+    "named": { "course": { "from": "course_code", "transform": "dash_join" } }
+  },
+  "steps": [
+    {
+      "id": "search",
+      "method": "GET",
+      "url": "https://apps-studentrcc.msappproxy.net/schedule/_api/web/lists/getByTitle('ScheduleData_RIV')/items",
+      "query": {
+        "$filter": "Term eq '{term}' and Primary_x0020_Subject eq '{course}'",
+        "$select": "Title,Section_x0020_Number,Primary_x0020_Subject,College,Term,Instructor_x0020_Method_x0020_1,Instructor_x0020_Method_x0020_2,Faculty_x0020_Name_x0020_1,Total_x0020_Seats,Seats_x0020_Used,Start_x0020_Date_x0020_1,End_x0020_Date_x0020_1,Start_x0020_Time_x0020_1,End_x0020_Time_x0020_1,Day1Mon,Day1Tue,Day1Wed,Day1Thu,Day1Fri,Day1Sat,Day1Sun,Building_x0020_1,Room_x0020_1,Start_x0020_Date_x0020_2,End_x0020_Date_x0020_2,Start_x0020_Time_x0020_2,End_x0020_Time_x0020_2,Day2Mon,Day2Tue,Day2Wed,Day2Thu,Day2Fri,Day2Sat,Day2Sun,Building_x0020_2,Room_x0020_2,Start_x0020_Date_x0020_3,End_x0020_Date_x0020_3,Start_x0020_Time_x0020_3,End_x0020_Time_x0020_3,Day3Mon,Day3Tue,Day3Wed,Day3Thu,Day3Fri,Day3Sat,Day3Sun,Building_x0020_3,Room_x0020_3,Start_x0020_Date_x0020_4,End_x0020_Date_x0020_4,Start_x0020_Time_x0020_4,End_x0020_Time_x0020_4,Day4Mon,Day4Tue,Day4Wed,Day4Thu,Day4Fri,Day4Sat,Day4Sun,Building_x0020_4,Room_x0020_4,Start_x0020_Date_x0020_5,End_x0020_Date_x0020_5,Start_x0020_Time_x0020_5,End_x0020_Time_x0020_5,Day5Mon,Day5Tue,Day5Wed,Day5Thu,Day5Fri,Day5Sat,Day5Sun,Building_x0020_5,Room_x0020_5,Start_x0020_Date_x0020_6,End_x0020_Date_x0020_6,Start_x0020_Time_x0020_6,End_x0020_Time_x0020_6,Day6Mon,Day6Tue,Day6Wed,Day6Thu,Day6Fri,Day6Sat,Day6Sun,Building_x0020_6,Room_x0020_6",
+        "$top": "500"
+      },
+      "headers": { "Accept": "application/json;odata=nometadata" }
+    }
+  ],
+  "extract": {
+    "kind": "json",
+    "rows": "$.value[*]",
+    "fields": {
+      "section_id": "$.Section_x0020_Number",
+      "title": "$.Title",
+      "instructor": "$.Faculty_x0020_Name_x0020_1",
+      "seats_total": "$.Total_x0020_Seats",
+      "seats_used": "$.Seats_x0020_Used",
+      "course_code_as_listed": "$.Primary_x0020_Subject"
+    },
+    "status": { "from_seats": true },
+    "modality": { "tokens": ["$.Instructor_x0020_Method_x0020_1", "$.Instructor_x0020_Method_x0020_2"] },
+    "meetings": [
+      { "days": { "flags": ["$.Day1Mon", "$.Day1Tue", "$.Day1Wed", "$.Day1Thu", "$.Day1Fri", "$.Day1Sat", "$.Day1Sun"] },
+        "start": "$.Start_x0020_Time_x0020_1", "end": "$.End_x0020_Time_x0020_1",
+        "location": { "join": ["$.Building_x0020_1", "$.Room_x0020_1"] },
+        "start_date": "$.Start_x0020_Date_x0020_1", "end_date": "$.End_x0020_Date_x0020_1" },
+      { "days": { "flags": ["$.Day2Mon", "$.Day2Tue", "$.Day2Wed", "$.Day2Thu", "$.Day2Fri", "$.Day2Sat", "$.Day2Sun"] },
+        "start": "$.Start_x0020_Time_x0020_2", "end": "$.End_x0020_Time_x0020_2",
+        "location": { "join": ["$.Building_x0020_2", "$.Room_x0020_2"] },
+        "start_date": "$.Start_x0020_Date_x0020_2", "end_date": "$.End_x0020_Date_x0020_2" },
+      { "days": { "flags": ["$.Day3Mon", "$.Day3Tue", "$.Day3Wed", "$.Day3Thu", "$.Day3Fri", "$.Day3Sat", "$.Day3Sun"] },
+        "start": "$.Start_x0020_Time_x0020_3", "end": "$.End_x0020_Time_x0020_3",
+        "location": { "join": ["$.Building_x0020_3", "$.Room_x0020_3"] },
+        "start_date": "$.Start_x0020_Date_x0020_3", "end_date": "$.End_x0020_Date_x0020_3" },
+      { "days": { "flags": ["$.Day4Mon", "$.Day4Tue", "$.Day4Wed", "$.Day4Thu", "$.Day4Fri", "$.Day4Sat", "$.Day4Sun"] },
+        "start": "$.Start_x0020_Time_x0020_4", "end": "$.End_x0020_Time_x0020_4",
+        "location": { "join": ["$.Building_x0020_4", "$.Room_x0020_4"] },
+        "start_date": "$.Start_x0020_Date_x0020_4", "end_date": "$.End_x0020_Date_x0020_4" },
+      { "days": { "flags": ["$.Day5Mon", "$.Day5Tue", "$.Day5Wed", "$.Day5Thu", "$.Day5Fri", "$.Day5Sat", "$.Day5Sun"] },
+        "start": "$.Start_x0020_Time_x0020_5", "end": "$.End_x0020_Time_x0020_5",
+        "location": { "join": ["$.Building_x0020_5", "$.Room_x0020_5"] },
+        "start_date": "$.Start_x0020_Date_x0020_5", "end_date": "$.End_x0020_Date_x0020_5" },
+      { "days": { "flags": ["$.Day6Mon", "$.Day6Tue", "$.Day6Wed", "$.Day6Thu", "$.Day6Fri", "$.Day6Sat", "$.Day6Sun"] },
+        "start": "$.Start_x0020_Time_x0020_6", "end": "$.End_x0020_Time_x0020_6",
+        "location": { "join": ["$.Building_x0020_6", "$.Room_x0020_6"] },
+        "start_date": "$.Start_x0020_Date_x0020_6", "end_date": "$.End_x0020_Date_x0020_6" }
+    ]
+  }
+}

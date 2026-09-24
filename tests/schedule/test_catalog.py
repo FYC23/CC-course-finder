@@ -157,6 +157,7 @@ def test_get_college_source_all_entries(entry: dict):
         "vsb_4cd",
         "marin_colleague",
         "smcccd_colleague",
+        "replay",
     )
 
 
