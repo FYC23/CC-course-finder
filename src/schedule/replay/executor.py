@@ -7,6 +7,7 @@ error, and a per-host minimum interval shared across threads.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import threading
@@ -29,6 +30,8 @@ REQUEST_TIMEOUT_SECONDS = 20
 MIN_INTERVAL_PER_HOST = 0.5
 RETRY_DELAY_SECONDS = 1.0
 USER_AGENT = "Mozilla/5.0 (compatible; cc-course-finder; +https://github.com/FYC23/CC-course-finder)"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -114,7 +117,13 @@ class ReplayExecutor:
             raise PortalChanged(
                 f"step {step.id!r}: pagination total {total_text!r} is not a number"
             )
-        pages = min(math.ceil(int(total.group()) / paginate.page_size), paginate.max_pages)
+        needed = math.ceil(int(total.group()) / paginate.page_size)
+        if needed > paginate.max_pages:
+            logger.warning(
+                "step %r: %s results need %d pages; stopping at max_pages=%d, later sections are dropped",
+                step.id, total.group(), needed, paginate.max_pages,
+            )
+        pages = min(needed, paginate.max_pages)
         bodies: list[str] = []
         for page in range(1, pages):
             value = str(paginate.first + page * paginate.increment)

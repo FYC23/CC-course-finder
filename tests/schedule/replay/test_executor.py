@@ -171,6 +171,22 @@ def test_paginate_is_capped_by_max_pages(tmp_path):
     assert len(_run(_executor(session), spec).bodies) == 3
 
 
+def test_paginate_cap_logs_a_warning_naming_the_dropped_rows(tmp_path, caplog):
+    spec, page = _paged_spec(tmp_path, "1000", max_pages=3)
+    session = FakeSession({"https://example.edu/search": page})
+    with caplog.at_level("WARNING", logger="src.schedule.replay.executor"):
+        _run(_executor(session), spec)
+    assert "max_pages=3" in caplog.text and "1000" in caplog.text
+
+
+def test_paginate_within_cap_logs_nothing(tmp_path, caplog):
+    spec, page = _paged_spec(tmp_path, "45")
+    session = FakeSession({"https://example.edu/search": page})
+    with caplog.at_level("WARNING", logger="src.schedule.replay.executor"):
+        _run(_executor(session), spec)
+    assert caplog.text == ""
+
+
 def test_paginate_non_numeric_total_is_portal_changed(tmp_path):
     spec, page = _paged_spec(tmp_path, "many")
     session = FakeSession({"https://example.edu/search": page})
