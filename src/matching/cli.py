@@ -158,6 +158,9 @@ def discover(
         source = get_college_source(cc_id)
     except KeyError as err:
         raise typer.BadParameter(str(err), param_hint="--cc-id") from err
+    if source.status == "unsupported":
+        typer.echo(f"{source.cc_name} (cc_id={cc_id}) is marked unsupported in the catalog; skipping.", err=True)
+        raise typer.Exit(code=1)
     try:
         parsed_term = parse_term_label(term)
     except ValueError as err:

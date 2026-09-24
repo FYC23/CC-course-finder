@@ -14,6 +14,7 @@ from src.matching import cli as matching_cli
 from src.matching.models import CourseAlias
 from src.matching.store import list_aliases, upsert_alias
 from src.schedule.colleague_listing import parse_catalog_listing
+from src.schedule.models import CollegeScheduleSource
 
 runner = CliRunner()
 _FIXTURES = Path(__file__).parents[1] / "fixtures"
@@ -110,6 +111,16 @@ def test_discover_stores_formerly_alias_then_second_run_is_matched(db, monkeypat
     assert "MATH 6: matched (listed as MATH 6)" in first.stdout
     second = _invoke("discover", "--cc-id", 35, "--term", "Fall 2026", "--db", db)
     assert "MATH 5A: matched" in second.stdout
+
+
+def test_discover_refuses_a_college_marked_unsupported(db, monkeypatch):
+    _seed_assist(db)
+    unsupported = CollegeScheduleSource(cc_id=35, cc_name="Fresno City College", system="colleague_selfservice",
+                                        base_url="https://example.edu", locations=(), status="unsupported")
+    monkeypatch.setattr(matching_cli, "get_college_source", lambda cc_id: unsupported)
+    result = _invoke("discover", "--cc-id", 35, "--term", "Fall 2026", "--db", db)
+    assert result.exit_code == 1
+    assert "unsupported" in result.output.lower()
 
 
 def test_discover_without_assist_rows_exits_1(db):
