@@ -20,6 +20,8 @@ _FALL = parse_term_label("Fall 2026")
         ("CIS 17A", ("CIS", "17A")),
         ("ENGWR300", ("ENGWR", "300")),
         ("weird code 1 2", ("WEIRD CODE 1 2", "")),
+        ("MAT", ("MAT", "")),
+        ("1B", ("1B", "")),
     ],
 )
 def test_course_parts(code, expected):
@@ -63,6 +65,8 @@ def test_term_input_season_missing_is_term_not_listed():
         ("MAT 1B", "subject", "dash_join", "MAT"),
         ("MAT 1B", "subject", "compact", "MAT"),
         ("mat 1b", "number", "upper", "1B"),
+        ("ENGWR300", "course_code", "dash_join", "ENGWR-300"),
+        ("CIS17A", "course_code", "compact", "CIS17A"),
     ],
 )
 def test_named_inputs(course_code, source, transform, expected):

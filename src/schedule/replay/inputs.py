@@ -13,7 +13,7 @@ from types import MappingProxyType
 from ..term import ParsedTerm, TermNotListedError
 from .spec import SpecInputs
 
-_COURSE_CODE_RE = re.compile(r"^\s*([A-Za-z]+)\s*[- ]?\s*([A-Za-z0-9]+)\s*$")
+_COURSE_CODE_RE = re.compile(r"^\s*([A-Za-z]+)\s*[- ]?\s*([A-Za-z]*\d[A-Za-z0-9]*)\s*$")
 _PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -38,17 +38,11 @@ def _upper(source_value: str) -> str:
 
 
 def _dash_join(source_value: str) -> str:
-    # If no separator present, treat as subject-only (no parsing needed)
-    if ' ' not in source_value and '-' not in source_value:
-        return source_value.upper()
     subject, number = course_parts(source_value)
     return f"{subject}-{number}" if number else subject
 
 
 def _compact(source_value: str) -> str:
-    # If no separator present, treat as subject-only (no parsing needed)
-    if ' ' not in source_value and '-' not in source_value:
-        return source_value.upper()
     subject, number = course_parts(source_value)
     return f"{subject}{number}"
 
