@@ -6,7 +6,7 @@ import requests
 
 from src.assist.models import AgreementRef, ArticulationRow
 from src.assist.pipeline import ingest_target_major
-from src.assist.store import query_rows
+from src.assist.store import ensure_db, query_rows, save_rows
 
 
 class _FakeDiscovery:
@@ -160,3 +160,71 @@ def test_ingest_emits_progress_logs(tmp_path: Path, monkeypatch) -> None:
     assert any("Parsed 1 articulation rows" in msg for msg in logs)
     assert any("Artifact fetch stats" in msg for msg in logs)
     assert any("Ingest complete" in msg for msg in logs)
+
+
+def _ref(cc_id: int, agreement_id: str) -> AgreementRef:
+    return AgreementRef(
+        target_school_id=117,
+        target_school_name="University of California, Los Angeles",
+        target_major="Computer Science",
+        cc_id=cc_id,
+        cc_name=f"College {cc_id}",
+        academic_year_id=73,
+        academic_year_label="2022-2023",
+        agreement_id=agreement_id,
+        artifact_url=f"/api/artifacts/{agreement_id}",
+    )
+
+
+def _stored_row(ref: AgreementRef, course_code: str) -> ArticulationRow:
+    return ArticulationRow(
+        target_school=ref.target_school_name,
+        target_major=ref.target_major,
+        target_requirement="COM SCI 33",
+        uc_equivalent="COM SCI 33",
+        cc_name=ref.cc_name,
+        cc_id=ref.cc_id,
+        course_code=course_code,
+        course_title="",
+        agreement_id=ref.agreement_id,
+        academic_year=ref.academic_year_label or "",
+        source_url=ref.artifact_url,
+    )
+
+
+def test_reingest_replaces_stale_rows_only_for_colleges_it_parsed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    parsed, unreachable = _ref(2, "26089328"), _ref(3, "404")
+    ensure_db(db_path)
+    save_rows(
+        db_path,
+        "old-run",
+        [_stored_row(parsed, "MATH 61"), _stored_row(unreachable, "CS 21")],
+    )
+
+    class _Fetcher:
+        def fetch_artifact(self, ref: AgreementRef, force: bool = False) -> Path:
+            if ref.agreement_id == "404":
+                response = requests.Response()
+                response.status_code = 500
+                raise requests.HTTPError("server error", response=response)
+            return tmp_path / "report.pdf"
+
+    monkeypatch.setattr("src.assist.pipeline.extract_text_from_pdf", lambda _: "")
+    monkeypatch.setattr(
+        "src.assist.pipeline.parse_articulation_rows",
+        lambda ref_used, _: [_stored_row(ref_used, "CISP 310")],
+    )
+
+    ingest_target_major(
+        discovery=_FakeDiscovery([parsed, unreachable]),
+        fetcher=_Fetcher(),
+        db_path=db_path,
+        target_school="UCLA",
+        major_name="Computer Science",
+    )
+
+    stored = query_rows(db_path, parsed.target_school_name, parsed.target_major)
+    assert {(row.cc_id, row.course_code) for row in stored} == {(2, "CISP 310"), (3, "CS 21")}

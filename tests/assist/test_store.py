@@ -340,3 +340,69 @@ def test_create_job_retries_when_database_locked(
     assert attempts["count"] >= 2
     assert job is not None
 
+
+
+_UCLA_CS = ("University of California, Los Angeles", "Computer Science")
+
+
+def _row(cc_id: int, course_code: str, major: str = "Computer Science") -> ArticulationRow:
+    return ArticulationRow(
+        target_school="University of California, Los Angeles",
+        target_major=major,
+        target_requirement="MATH 61",
+        uc_equivalent="MATH 61",
+        cc_name=f"College {cc_id}",
+        cc_id=cc_id,
+        course_code=course_code,
+        course_title="",
+        agreement_id="26089328",
+        academic_year="2022-2023",
+        source_url="/api/artifacts/26089328",
+        notes="fixture",
+        raw_text="raw",
+    )
+
+
+def _codes(db_path: Path, major: str = "Computer Science") -> set[tuple[int, str]]:
+    rows = query_rows(db_path, "University of California, Los Angeles", major)
+    return {(row.cc_id, row.course_code) for row in rows}
+
+
+def test_save_rows_replaces_older_rows_for_reparsed_colleges(tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    ensure_db(db_path)
+    save_rows(db_path, "run-1", [_row(2, "MATH 61"), _row(3, "SELECT 1"), _row(4, "CS 21")])
+
+    save_rows(db_path, "run-2", [_row(2, "MATH 070")], replace_cc_ids={2, 3}, scope=_UCLA_CS)
+
+    assert _codes(db_path) == {(2, "MATH 070"), (4, "CS 21")}
+
+
+def test_save_rows_replace_is_scoped_to_school_and_major(tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    ensure_db(db_path)
+    save_rows(db_path, "run-1", [_row(2, "MATH 1A", major="Mathematics")])
+
+    save_rows(db_path, "run-2", [_row(2, "MATH 070")], replace_cc_ids={2}, scope=_UCLA_CS)
+
+    assert _codes(db_path, major="Mathematics") == {(2, "MATH 1A")}
+
+
+def test_save_rows_without_replace_keeps_older_runs(tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    ensure_db(db_path)
+    save_rows(db_path, "run-1", [_row(2, "MATH 61")])
+
+    save_rows(db_path, "run-2", [_row(2, "MATH 070")])
+
+    assert _codes(db_path) == {(2, "MATH 61"), (2, "MATH 070")}
+
+
+def test_save_rows_replace_clears_a_college_that_now_parses_to_nothing(tmp_path: Path) -> None:
+    db_path = tmp_path / "assist.sqlite3"
+    ensure_db(db_path)
+    save_rows(db_path, "run-1", [_row(2, "MATH 61")])
+
+    save_rows(db_path, "run-2", [], replace_cc_ids={2}, scope=_UCLA_CS)
+
+    assert _codes(db_path) == set()

@@ -47,6 +47,7 @@ def ingest_target_major(
     _emit(f"Discovery complete: {len(refs)} agreements to process.")
 
     all_rows: list[ArticulationRow] = []
+    reparsed_cc_ids: set[int] = set()
     download_count = 0
     cache_hit_count = 0
     total_refs = len(refs)
@@ -123,6 +124,7 @@ def ingest_target_major(
                 f"for {parse_ref.cc_name} agreement {parse_ref.agreement_id}."
             )
             all_rows.extend(parsed_rows)
+            reparsed_cc_ids.add(parse_ref.cc_id)
         except Exception as err:
             _emit(
                 "Failed to parse/store artifact "
@@ -154,7 +156,11 @@ def ingest_target_major(
         allow_non_numeric_keys=allow_non_numeric_keys,
     )
     save_run(db_path, run)
-    inserted = save_rows(db_path, run.run_id, all_rows)
+    # Rows are keyed by the school/major names discovery returned, not the CLI input.
+    scope = (refs[0].target_school_name, refs[0].target_major) if refs else None
+    inserted = save_rows(
+        db_path, run.run_id, all_rows, replace_cc_ids=reparsed_cc_ids, scope=scope
+    )
     _emit(
         f"Persisted run {run.run_id}: agreements_seen={run.agreements_seen}, "
         f"rows_written={inserted}."

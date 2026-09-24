@@ -5,7 +5,7 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Collection, TypeVar
 
 from .config import DB_PATH
 from .models import ArticulationRow, IngestRun
@@ -181,8 +181,26 @@ def save_run(path: Path, run: IngestRun) -> None:
     _with_write_retry(path, _write)
 
 
-def save_rows(path: Path, run_id: str, rows: list[ArticulationRow]) -> int:
+def save_rows(
+    path: Path,
+    run_id: str,
+    rows: list[ArticulationRow],
+    *,
+    replace_cc_ids: Collection[int] = (),
+    scope: tuple[str, str] | None = None,
+) -> int:
+    """Insert ``rows`` under ``run_id``.
+
+    ``replace_cc_ids`` names the colleges this run re-parsed; their rows from earlier runs
+    for ``scope`` (target school, target major) are deleted in the same transaction, so a
+    re-ingest supersedes stale parses while colleges the run didn't reach keep theirs.
+    """
+    if replace_cc_ids and scope is None:
+        raise ValueError("replace_cc_ids needs a (target_school, target_major) scope")
+
     def _write(conn: sqlite3.Connection) -> int:
+        if scope is not None:
+            _delete_college_rows(conn, scope, replace_cc_ids)
         inserted = 0
         for row in rows:
             cursor = conn.execute(
@@ -214,6 +232,19 @@ def save_rows(path: Path, run_id: str, rows: list[ArticulationRow]) -> int:
         return inserted
 
     return _with_write_retry(path, _write)
+
+
+def _delete_college_rows(
+    conn: sqlite3.Connection, scope: tuple[str, str], cc_ids: Collection[int]
+) -> None:
+    target_school, target_major = scope
+    conn.executemany(
+        """
+        DELETE FROM articulation_rows
+        WHERE target_school = ? AND target_major = ? AND cc_id = ?
+        """,
+        [(target_school, target_major, cc_id) for cc_id in sorted(cc_ids)],
+    )
 
 
 def compute_options_hash(max_cc: int | None, allow_non_numeric_keys: bool) -> str:
