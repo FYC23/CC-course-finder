@@ -124,7 +124,14 @@ def ingest_target_major(
                 f"for {parse_ref.cc_name} agreement {parse_ref.agreement_id}."
             )
             all_rows.extend(parsed_rows)
-            reparsed_cc_ids.add(parse_ref.cc_id)
+            if parsed_rows:
+                reparsed_cc_ids.add(parse_ref.cc_id)
+            else:
+                # More likely a layout change than every articulation vanishing.
+                _emit(
+                    f"[{index}/{total_refs}] No rows parsed for {parse_ref.cc_name}; "
+                    "kept its rows from earlier runs."
+                )
         except Exception as err:
             _emit(
                 "Failed to parse/store artifact "

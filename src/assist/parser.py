@@ -43,6 +43,10 @@ def _is_course_line(line: str) -> bool:
     return _COURSE_LINE.fullmatch(_clean_line(line)) is not None
 
 
+def _has_course(text: str) -> bool:
+    return _is_course_line(text) or _COURSE_PATTERN.search(_clean_line(text)) is not None
+
+
 def _normalize_uc_course(raw: str) -> str:
     """A UC course line keeps its whole department ("COM SCI 33"); requirement text falls back."""
     if _is_course_line(raw):
@@ -127,8 +131,7 @@ def parse_articulation_rows(ref: AgreementRef, raw_text: str) -> list[Articulati
         source_line = f"{left} -> {right}"
         cc_course = _normalize_cc_course(right)
         uc_course = _normalize_uc_course(left)
-        if cc_course == right and uc_course == left:
-            # Skip pairs where we found no course-like tokens.
+        if not _has_course(right):
             continue
 
         rows.append(

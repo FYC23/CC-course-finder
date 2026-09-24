@@ -228,3 +228,35 @@ def test_reingest_replaces_stale_rows_only_for_colleges_it_parsed(
 
     stored = query_rows(db_path, parsed.target_school_name, parsed.target_major)
     assert {(row.cc_id, row.course_code) for row in stored} == {(2, "CISP 310"), (3, "CS 21")}
+
+
+def test_reingest_keeps_rows_of_a_college_that_now_parses_to_nothing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An empty parse more likely means ASSIST changed its layout than that every
+    articulation vanished, so it must not wipe the college's rows."""
+    db_path = tmp_path / "assist.sqlite3"
+    ref = _ref(2, "26089328")
+    ensure_db(db_path)
+    save_rows(db_path, "old-run", [_stored_row(ref, "MATH 070")])
+
+    class _Fetcher:
+        def fetch_artifact(self, ref: AgreementRef, force: bool = False) -> Path:
+            return tmp_path / "report.pdf"
+
+    logs: list[str] = []
+    monkeypatch.setattr("src.assist.pipeline.extract_text_from_pdf", lambda _: "")
+    monkeypatch.setattr("src.assist.pipeline.parse_articulation_rows", lambda ref_used, _: [])
+
+    ingest_target_major(
+        discovery=_FakeDiscovery([ref]),
+        fetcher=_Fetcher(),
+        db_path=db_path,
+        target_school="UCLA",
+        major_name="Computer Science",
+        log=logs.append,
+    )
+
+    stored = query_rows(db_path, ref.target_school_name, ref.target_major)
+    assert [row.course_code for row in stored] == ["MATH 070"]
+    assert any("kept" in msg and "College 2" in msg for msg in logs)

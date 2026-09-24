@@ -166,3 +166,14 @@ def test_cc_course_keeps_letter_prefixed_numbers() -> None:
 def test_cc_course_drops_nocccd_campus_marker() -> None:
     assert _single_cc_code("MATH| 151 F") == "MATH 151"
     assert _single_cc_code("PHYS| 221 C") == "PHYS 221"
+
+
+def test_clean_single_spaced_lines_still_parse() -> None:
+    """Lines without zero-width spaces must not be mistaken for "no course found"."""
+    raw = _pdf_text("MATH 31A", "- Differential and Integral", "Calculus (4.00)", "←", "MATH 1A")
+    assert ZWSP not in raw
+    assert _pairs(raw) == {("MATH 31A", "MATH 1A")}
+
+
+def test_inline_arrow_without_a_cc_course_is_skipped() -> None:
+    assert _pairs("MATH 31B ← No Course Articulated") == set()
