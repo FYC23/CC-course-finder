@@ -6,7 +6,7 @@ One query: **which community college courses transfer** (via ASSIST) **and are o
 
 ![CC Course Finder search UI: filters for university, major, term, and availability; results grouped by UC requirement with CC courses and offered status](docs/images/web-ui.png)
 
-**Current status (v0.1):** tuned for UCLA CS; ASSIST ingest fairly complete, schedule coverage pilot (~8 community colleges).
+**Current status (v0.2):** tuned for UCLA CS; ASSIST ingest fairly complete; schedule coverage about 50 community colleges across Colleague, Banner 9, VSB, WVM, and nine replay-spec colleges.
 
 ## Quick start
 
@@ -205,6 +205,15 @@ Pilot set only; expect this list to expand.
 | Los Angeles City College      | 3       | `colleague_selfservice` — (LACCD PeopleSoft, unsupported)     | unsupported |
 | College of Marin              | 4       | `marin_colleague` — (unsupported)                             | unsupported |
 | College of San Mateo          | 5       | `banner9_ssb` — SMCCD shared Banner 9 portal                  | works       |
+| Riverside City College        | 78      | `replay` — RCCD Class Finder OData (`data/specs/78.json`)     | works (codes drift; see note) |
+| Norco College                 | 148     | `replay` — RCCD Class Finder OData (`data/specs/148.json`)    | works (codes drift; see note) |
+| Moreno Valley College         | 149     | `replay` — RCCD Class Finder OData (`data/specs/149.json`)    | works (codes drift; see note) |
+| Cypress College               | 71      | `replay` — NOCCCD static JSON (`data/specs/71.json`)          | works       |
+| Fullerton College             | 134     | `replay` — NOCCCD static JSON (`data/specs/134.json`)         | works       |
+| American River College        | 27      | `replay` — Los Rios class search HTML (`data/specs/27.json`)  | works       |
+| Cosumnes River College        | 142     | `replay` — Los Rios class search HTML (`data/specs/142.json`) | works       |
+| Folsom Lake College           | 145     | `replay` — Los Rios class search HTML (`data/specs/145.json`) | works       |
+| Sacramento City College       | 126     | `replay` — Los Rios class search HTML (`data/specs/126.json`) | works       |
 
 Full catalog with per-district parameters: `src/schedule/data/colleges.json` (about 40 colleges as of Phase 1). Entries carry `status` (`active`, `stale`, `unsupported`) and `params` (`term_format`, `campus_codes`, `location_match`).
 
@@ -213,3 +222,21 @@ Full catalog with per-district parameters: `src/schedule/data/colleges.json` (ab
 `vsb_4cd` uses the Visual Schedule Builder (`vsb.4cd.edu`) shared by Diablo Valley, Los Medanos, and Contra Costa colleges. Term codes are derived deterministically (`YYYY` + `10`/`20`/`30` for Summer/Fall/Spring). Campus filtering is applied per-block using the `locations` field.
 
 `colleague_selfservice` uses Ellucian's Colleague self-service portal with per-district discovery of location and term codes.
+
+`replay` is a data-driven adapter: each college has a JSON spec at `src/schedule/data/specs/<cc_id>.json` describing up to five HTTP steps (with placeholders such as `{term}`, `{subject}`, `{number}`, values captured from earlier responses, optional caching and bounded pagination) and an extraction block that maps JSON paths or CSS selectors to sections and meetings. Specs are validated against `src/schedule/replay/schema.json` at load. Check them with:
+
+```bash
+uv run python -m src.schedule.replay.cli validate
+```
+
+Run one college's spec live, or probe every spec with its recorded probe course:
+
+```bash
+uv run python -m src.schedule.replay.cli run --cc-id 27 --term "Fall 2026" --course "MATH 400"
+```
+
+```bash
+uv run python -m src.schedule.replay.cli probe
+```
+
+Note on the Riverside district: ASSIST still lists pre-common-course-numbering codes (`MAT 1B`) while the live schedule uses `MATH-C2220`, so those rows show "Not offered" until course aliases land in Phase 3.
