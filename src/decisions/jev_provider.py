@@ -12,7 +12,7 @@ from typing import Any
 from .state import to_plain
 from .types import (
     Answer, Boolean, BooleanAnswer, Choice, ChoiceAnswer, DecisionUnavailable, Question,
-    ScoreAnswer,
+    ScoreAnswer, clamp01,
 )
 
 
@@ -35,18 +35,18 @@ def _to_sdk(sdk: Any, question: Question) -> Any:
 def _from_sdk(name: str, question: Question, answer: Any) -> Answer:
     try:
         if isinstance(question, Boolean):
-            return BooleanAnswer(probability=float(answer.noul))
+            return BooleanAnswer(probability=clamp01(answer.noul))
         probabilities = dict(answer.probabilities)
         if isinstance(question, Choice):
             return ChoiceAnswer(
                 choice=str(answer.choice),
-                probabilities=MappingProxyType({str(k): float(v) for k, v in probabilities.items()}),
-                confidence=float(answer.confidence),
+                probabilities=MappingProxyType({str(k): clamp01(v) for k, v in probabilities.items()}),
+                confidence=clamp01(answer.confidence),
             )
         return ScoreAnswer(
             score=float(answer.score),
-            probabilities=MappingProxyType({int(k): float(v) for k, v in probabilities.items()}),
-            confidence=float(answer.confidence),
+            probabilities=MappingProxyType({int(k): clamp01(v) for k, v in probabilities.items()}),
+            confidence=clamp01(answer.confidence),
         )
     except (AttributeError, TypeError, ValueError) as err:
         raise DecisionUnavailable(f"jev: unexpected answer shape for {name!r}: {err}") from err

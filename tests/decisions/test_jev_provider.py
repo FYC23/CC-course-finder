@@ -58,6 +58,20 @@ def test_answers_map_back_to_shared_types():
     assert dict(answers["fit"].probabilities) == {0: 0.1, 1: 0.4, 2: 0.5}
 
 
+def test_out_of_range_sdk_probabilities_are_clamped_to_0_1():
+    client = _Client(answers={
+        "same": SimpleNamespace(noul=1.2),
+        "mode": SimpleNamespace(choice="online", confidence=1.5, probabilities={"online": 1.2, "campus": -0.1}),
+        "fit": SimpleNamespace(score=1.4, confidence=-0.2, probabilities={0: -0.1, 1: 0.4, 2: 1.5}),
+    })
+    answers = JevDecisionProvider(client).decide("s", _QUESTIONS)
+    assert answers["same"] == BooleanAnswer(probability=1.0)
+    assert answers["mode"].confidence == 1.0
+    assert dict(answers["mode"].probabilities) == {"online": 1.0, "campus": 0.0}
+    assert answers["fit"].confidence == 0.0
+    assert dict(answers["fit"].probabilities) == {0: 0.0, 1: 0.4, 2: 1.0}
+
+
 def test_model_override_is_passed():
     client = _Client(answers={"same": SimpleNamespace(noul=0.5)})
     JevDecisionProvider(client, model="jev-latest").decide("s", {"same": _QUESTIONS["same"]})
