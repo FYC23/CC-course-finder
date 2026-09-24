@@ -134,16 +134,25 @@ def _mapping_keys(value: object) -> list[str]:
     return []
 
 
+def _request_keys(step: Step) -> Iterator[tuple[str, str]]:
+    for label, mapping in (("query", step.query), ("form", step.form), ("headers", step.headers)):
+        for key in mapping:
+            yield label, key
+    for key in _mapping_keys(step.json_body or {}):
+        yield "json body", key
+
+
 def _check_placeholders(spec: ReplaySpec) -> None:
     known = BUILTIN_PLACEHOLDERS | set(spec.inputs.named)
     if spec.inputs.term is not None:
-        _require_known(spec, spec.inputs.term.format, known | {"SEASON"}, "inputs.term.format")
+        # inputs.build_values renders the term before any named input exists.
+        _require_known(spec, spec.inputs.term.format, BUILTIN_PLACEHOLDERS | {"SEASON"}, "inputs.term.format")
         known = known | {"term"}
     for step in spec.steps:
-        for key in _mapping_keys(step.json_body or {}):
+        for label, key in _request_keys(step):
             if _placeholders(key):
                 raise _fail(
-                    spec, f"step {step.id!r}", f"json body key {key!r} has a placeholder; only values are rendered"
+                    spec, f"step {step.id!r}", f"{label} key {key!r} has a placeholder; only values are rendered"
                 )
         for template in _step_templates(step):
             _require_known(spec, template, known, f"step {step.id!r}")

@@ -227,3 +227,20 @@ def test_regex_on_const_or_join_rejected(tmp_path: Path, rule):
     extract = _json_extract(fields={"section_id": "$.crn", "title": rule})
     with pytest.raises(SpecInvalid, match=r"extract\.fields\.title.*regex only applies"):
         _load(tmp_path, extract=extract)
+
+
+def test_term_format_cannot_use_named_inputs(tmp_path: Path):
+    """The term is rendered before named inputs exist (inputs.build_values)."""
+    inputs = {
+        "term": {"format": "{course}{SEASON}", "seasons": {"fall": "70"}},
+        "named": {"course": {"from": "course_code"}},
+    }
+    with pytest.raises(SpecInvalid, match=r"inputs\.term\.format.*course"):
+        _load(tmp_path, inputs=inputs)
+
+
+@pytest.mark.parametrize("where", ["query", "form", "headers"])
+def test_placeholder_in_request_map_key_rejected(tmp_path: Path, where):
+    steps = [_step(method="POST", **{where: {"{subject}": "x"}})]
+    with pytest.raises(SpecInvalid, match=f"{where} key"):
+        _load(tmp_path, steps=steps)
