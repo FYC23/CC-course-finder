@@ -249,7 +249,7 @@ def test_successful_lookup_has_no_lookup_error(tmp_path: Path) -> None:
 
 
 from src.schedule.errors import PortalChanged  # noqa: E402
-from src.schedule.service import _lookup_error_reason  # noqa: E402
+from src.schedule.lookups import lookup_error_reason as _lookup_error_reason  # noqa: E402
 from src.schedule.term import parse_term_label as _parse_term  # noqa: E402
 
 

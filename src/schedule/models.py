@@ -71,3 +71,8 @@ class CourseAvailability:
     # Set when the college's schedule could not be checked; says why, in plain words.
     # ``offered`` is then False only because nothing was found, not because it isn't offered.
     lookup_error: str | None = None
+    # Set when the course was found under another code this term (see src/matching):
+    # the code the portal lists, where that mapping came from, and its alias status.
+    matched_code: str = ""
+    match_source: str = ""
+    match_status: str = ""
