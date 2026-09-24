@@ -91,3 +91,25 @@ def test_unknown_season_is_term_not_listed(spec):
 def test_default_constructor_loads_committed_specs():
     provider = GenericReplayProvider()
     assert not provider.supports_source(_OTHER)
+
+
+def test_extract_filter_can_use_a_captured_value(tmp_path: Path):
+    raw = {
+        **_SPEC,
+        "inputs": {},
+        "steps": [
+            {"id": "terms", "method": "GET", "url": "https://example.edu/terms",
+             "captures": {"term": {"json": "$.current"}}},
+            {"id": "search", "method": "GET", "url": "https://example.edu/api",
+             "query": {"subj": "{subject}", "num": "{number}"}},
+        ],
+        "extract": {**_SPEC["extract"], "filter": [{"value": "$.term", "equals": "{term}"}]},
+    }
+    path = tmp_path / "999.json"
+    path.write_text(json.dumps(raw))
+    rows = [{"crn": "1", "title": "Calc", "avail": 3, "term": "2026FA"},
+            {"crn": "2", "title": "Calc", "avail": 1, "term": "2027SP"}]
+    session = FakeSession({"https://example.edu/terms": json.dumps({"current": "2026FA"}),
+                           "https://example.edu/api": json.dumps({"data": rows})})
+    out = _provider(load_spec(path), session).search_course(source=_SOURCE, term=_FALL, course_code="MATH 1")
+    assert [s.section_id for s in out.sections] == ["1"]

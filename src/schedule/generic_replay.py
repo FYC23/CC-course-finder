@@ -8,6 +8,7 @@ college per search), and extracts sections with the spec's extract block.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import MappingProxyType
 
 import requests
 
@@ -46,7 +47,8 @@ class GenericReplayProvider:
         spec = self._specs[source.cc_id]
         values = build_values(spec.inputs, term, course_code)
         result = self._executor.execute(spec, term=term, values=values)
-        sections = extract_sections(result.bodies, spec.extract, values)
+        scope = MappingProxyType({**values, **result.captures})
+        sections = extract_sections(result.bodies, spec.extract, scope)
         return CourseAvailability(
             cc_id=source.cc_id,
             cc_name=source.cc_name,
