@@ -239,4 +239,26 @@ uv run python -m src.schedule.replay.cli run --cc-id 27 --term "Fall 2026" --cou
 uv run python -m src.schedule.replay.cli probe
 ```
 
-Note on the Riverside district: ASSIST still lists pre-common-course-numbering codes (`MAT 1B`) while the live schedule uses `MATH-C2220`, so those rows show "Not offered" until course aliases land in Phase 3.
+Note on the Riverside district: ASSIST still lists pre-common-course-numbering codes (`MAT 1B`) while the live schedule uses `MATH-C2220`; course matching (below) resolves this.
+
+## Renumbered courses (course matching)
+
+California's Common Course Numbering system has renamed and renumbered courses at several CCs — Riverside's `MAT 1B` is now listed as `MATH-C2220`, for example. ASSIST doesn't always catch up, so a search that only looked a course up by its ASSIST code would miss it and wrongly report "Not offered."
+
+`src/matching` closes that gap. Each search looks an ASSIST course up under every code a college might list it under this term — committed seed data (`src/matching/data/course_aliases.csv`, `subject_renames.csv`) plus a SQLite alias table — and the last code tried is always the original ASSIST code, so a wrong alias can never hide a course still listed the old way. When a match comes from an alias, the web UI shows a note: "Matched via alias: listed as MATH-C2220."
+
+New aliases come from an offline discover pass, not from the search path itself:
+
+```bash
+uv run python -m src.matching.cli discover --cc-id 78 --term "Fall 2026"
+```
+
+`discover` first checks the college catalog's own "(Formerly ...)" notes, which need no model. If a course still isn't matched and `DECISION_PROVIDER` is set (`llm` or `jev`; see `.env.example` for the provider/model env vars), it asks a decision backend whether a candidate course is the same course, renumbered or renamed, and stores the result: a confident match is applied automatically, a plausible one waits in a review queue, and the rest are dropped.
+
+```bash
+uv run python -m src.matching.cli review                 # aliases waiting for a human
+uv run python -m src.matching.cli approve 12              # or: reject 12
+uv run python -m src.matching.cli export                  # promote verified DB rows into the committed seed file
+```
+
+A human `approve`/`reject` is final — no later automated pass overwrites it. `DECISION_PROVIDER=none` (the default) still runs the "(Formerly ...)" pass, just without model-assisted matching. See `evals/README.md` for how the decision backends are evaluated against hand-labeled cases before they're trusted for `discover`.
