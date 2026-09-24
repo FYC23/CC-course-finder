@@ -50,7 +50,7 @@ uv sync --extra anthropic   # or: --extra gemini, --extra openai, --extra jev
 
 ## Architecture
 
-Three-layer pipeline: **ASSIST ingest → course matching → schedule lookup → web/CLI output**
+Four-stage pipeline: **ASSIST ingest → course matching → schedule lookup → web/CLI output**
 
 ### ASSIST Layer (`src/assist/`)
 
@@ -135,7 +135,7 @@ FastAPI app serving a search UI.
 
 Hand-labeled seed sets, a runner, and committed results for the decision questions.
 
-- `datasets.py` — loads `data/*.csv` seed sets (`course_equivalent`, `section_modality`)
+- `datasets.py` — loads the JSON-lines seed sets under `data/` (`course_equivalent.jsonl`, `section_modality.jsonl`)
 - `runner.py` — scores the `DECISION_PROVIDER`-selected backend against a seed set; manual, costs money, not part of pytest
 - `report.py` — renders a markdown report to `results/<date>-<question>-<backend>.md`
 - `results/` — committed run outputs; the evidence for the thresholds in `src/matching/config.py`
@@ -159,4 +159,4 @@ Hand-labeled seed sets, a runner, and committed results for the decision questio
 
 **No model in the query path.** Decision calls happen only in `matching discover` and `evals.runner`. Vendor SDKs are optional extras, each imported in exactly one file.
 
-**SQLite at `data/assist.sqlite3`:** Tables are `ingest_runs` and `articulation_rows`. The DB is populated by the ASSIST ingest pipeline before schedule queries can work.
+**SQLite at `data/assist.sqlite3`:** Tables are `ingest_runs`, `articulation_rows`, and `course_aliases` (created by `src/matching/store.py`). The DB is populated by the ASSIST ingest pipeline before schedule queries can work.
