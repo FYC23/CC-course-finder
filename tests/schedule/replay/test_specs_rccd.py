@@ -99,3 +99,33 @@ def test_term_check_is_cached_per_provider():
     provider.search_course(source=get_college_source(78), term=fall, course_code="MATH C2220")
     provider.search_course(source=get_college_source(78), term=fall, course_code="MAT 1B")
     assert [c["params"]["$filter"].startswith("Term eq '26FAL' and") for c in session.calls] == [False, True, True]
+
+
+_LISTING_SAMPLE = (_FIXTURES / "rccd_riv_listing_math.json").read_text()
+
+
+@pytest.mark.parametrize("cc_id,list_code", [(78, "RIV"), (148, "NOR"), (149, "MOV")])
+def test_listing_request_shape(cc_id: int, list_code: str):
+    session = FakeSession(_routes(_LISTING_SAMPLE))
+    courses = _provider(session).list_subject(
+        source=get_college_source(cc_id), term=parse_term_label("Fall 2026"), subject="MATH")
+    check, call = session.calls
+    assert check["params"] == {"$filter": "Term eq '26FAL'", "$select": "Term", "$top": "1"}
+    assert call["url"] == f"{_HOST}{list_code}')/items"
+    assert call["params"] == {
+        "$filter": "Term eq '26FAL' and startswith(Primary_x0020_Subject,'MATH-')",
+        "$select": "Primary_x0020_Subject,Title,Description",
+        "$top": "1000",
+    }
+    assert [(c.code, c.title) for c in courses] == [
+        ("MATH-1C", "Calculus III"), ("MATH-2", "Differential Equations"),
+        ("MATH-C2220", "Calculus II: Early Transcendentals"),
+    ]
+    assert courses[2].description.startswith("A second course in differential and integral calculus")
+
+
+def test_listing_unpublished_term_is_term_not_listed():
+    session = FakeSession({_HOST: ['{"value": []}']})
+    with pytest.raises(TermNotListedError):
+        _provider(session).list_subject(
+            source=get_college_source(78), term=parse_term_label("Fall 2027"), subject="MATH")

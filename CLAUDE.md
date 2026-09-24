@@ -34,11 +34,23 @@ uv run python -m src.schedule.cli query --target-school "University of Californi
 uv run python -m src.schedule.replay.cli validate
 uv run python -m src.schedule.replay.cli run --cc-id 27 --term "Fall 2026" --course "MATH 400"
 uv run python -m src.schedule.replay.cli probe
+
+# Course matching (aliases for renumbered/renamed courses)
+uv run python -m src.matching.cli review
+uv run python -m src.matching.cli approve 12            # or: reject 12
+uv run python -m src.matching.cli discover --cc-id 35 --term "Fall 2026"   # live portals; DECISION_PROVIDER picks the backend
+uv run python -m src.matching.cli export
+
+# Decision evals (manual; costs money)
+DECISION_PROVIDER=llm LLM_PROVIDER=<vendor> LLM_MODEL=<id> uv run python -m evals.runner course-equivalent
+
+# Optional SDKs (the dev group already installs all of them)
+uv sync --extra anthropic   # or: --extra gemini, --extra openai, --extra jev
 ```
 
 ## Architecture
 
-Three-layer pipeline: **ASSIST ingest → schedule lookup → web/CLI output**
+Four-stage pipeline: **ASSIST ingest → course matching → schedule lookup → web/CLI output**
 
 ### ASSIST Layer (`src/assist/`)
 
@@ -52,6 +64,38 @@ Ingests articulation data from ASSIST.org into SQLite.
 - `pipeline.py` — orchestrates the full ingest workflow
 - `models.py` — `Institution`, `AgreementRef`, `ArticulationRow`, `IngestRun`
 
+### LLM Layer (`src/llm/`)
+
+The one interface every generative call goes through.
+
+- `model.py` — `GenerativeModel` protocol: `complete_structured`, `complete_text`, `call_records`
+- `runner.py` — shared plumbing for every backend: a `CallRecord` per attempt, JSON-schema validation, exactly one retry on a schema mismatch, no retry on a refusal
+- `anthropic_backend.py`, `gemini_backend.py`, `openai_backend.py` — one file per vendor; each is the only place its SDK is imported
+- `config.py` — `model_from_env()` picks the backend from `LLM_PROVIDER`, `LLM_MODEL`, and optional `LLM_BASE_URL`
+- `fake.py` — `FakeModel` for tests; no network
+
+### Decision Layer (`src/decisions/`)
+
+Answers named questions about one state, with probabilities so thresholds come from an eval, not a guess.
+
+- `types.py` — `Boolean`/`Choice`/`Score` questions, `BooleanAnswer`/`ChoiceAnswer`/`ScoreAnswer`, `DecisionProvider` protocol, `DecisionUnavailable`
+- `questions.py` — the shared questions: `course_equivalent`, `section_modality`
+- `llm_provider.py` — `DecisionProvider` backed by a `GenerativeModel`
+- `jev_provider.py` — `DecisionProvider` backed by Jev (`typesafe-sdk`: `Noul`, `Choice`, `Score`); the only module that imports the SDK
+- `factory.py` — `decision_provider_from_env()`: `DECISION_PROVIDER=jev|llm|none`; `none` (or unset) returns `None` and every call site falls back to a deterministic default
+
+### Matching Layer (`src/matching/`)
+
+Resolves course-code drift (renumbered/renamed courses) between ASSIST and a college's live schedule, offline and per-search with no model calls.
+
+- `codes.py` — `code_key`: `"MAT 1B"` == `"MAT-1B"` == `"MAT1B"`
+- `seeds.py` plus `data/course_aliases.csv` and `data/subject_renames.csv` — committed, verified seed data (the RCCD crosswalk and `MAT`→`MATH`-style subject renames)
+- `store.py` — the `course_aliases` table in `data/assist.sqlite3`; review-safe upserts
+- `resolve.py` — `CourseResolver.live_codes()`: the codes to look a course up under this term (aliases, then a renamed spelling, then the ASSIST code itself), at most 3, read once per search, no network, no model. The last slot is always the ASSIST code itself, so a wrong alias can never hide a course still listed under its old code.
+- `formerly.py` — deterministic "(Formerly X)" catalog-note matching
+- `discover.py` — the offline discover pass; the subject lister and decision backend are injected
+- `cli.py` — `review`, `approve`/`reject`, `add`, `discover`, `export`, `import-rccd`
+
 ### Schedule Layer (`src/schedule/`)
 
 Queries live CC schedule systems to check if articulated courses are offered in a given term.
@@ -59,7 +103,10 @@ Queries live CC schedule systems to check if articulated courses are offered in 
 - `providers.py` — `ScheduleProvider` protocol: `supports_source(source)` + `search_course(source, dept, number, term)`
 - `composite.py` — `CompositeProvider` dispatches to the right scraper by system type
 - `catalog.py` — loads `colleges.json` mapping CC IDs → `CollegeScheduleSource`
-- `service.py` — `ScheduleService`: `plan()` picks colleges/courses from the ASSIST DB, `iter_results()` looks colleges up in parallel (one provider + HTTP session per college via `provider_factory`, one college's courses in order, at most 3 lookups per server) and yields each college as it finishes
+- `service.py` — `ScheduleService`: `plan()` picks colleges/courses from the ASSIST DB, `iter_results()` looks colleges up in parallel (one provider + HTTP session per college via `provider_factory`, one college's courses in order, at most 3 lookups per server), resolves each ASSIST code's live codes once per search (`src/matching.load_resolver`), and yields each college as it finishes
+- `lookups.py` — merges the per-live-code lookups back under the ASSIST code and records `matched_code` / `match_source` / `match_status`
+- `listing.py` — `ListedCourse`, `ListingUnsupported`; Banner 9, Colleague, and replay `listing` blocks can list a whole subject for the discover pass
+- `colleague_listing.py` — Colleague Self-Service subject listing (`CatalogListing`, paginated)
 - `term.py` — parses term labels like `"Summer 2026"` into provider-specific formats
 - `errors.py` — `ScheduleLookupError`, `PortalChanged` (portal answered in an unexpected shape), `SpecInvalid`
 - `generic_replay.py` — `GenericReplayProvider`: `ScheduleProvider` for `system == "replay"`; replays the college's spec from `data/specs/<cc_id>.json` and is registered last in `CompositeProvider`
@@ -84,6 +131,16 @@ FastAPI app serving a search UI.
 - `join.py` — `join_results()` merges articulation rows with schedule availability
 - `templates/index.html` — single-page frontend
 
+### Evals (`evals/`)
+
+Hand-labeled seed sets, a runner, and committed results for the decision questions.
+
+- `datasets.py` — loads the JSON-lines seed sets under `data/` (`course_equivalent.jsonl`, `section_modality.jsonl`)
+- `runner.py` — scores the `DECISION_PROVIDER`-selected backend against a seed set; manual, costs money, not part of pytest
+- `report.py` — renders a markdown report to `results/<date>-<question>-<backend>.md`
+- `results/` — committed run outputs; the evidence for the thresholds in `src/matching/config.py`
+- Eval tests live in `tests/eval_harness/` (not `tests/evals/`) — a `tests/evals` package would shadow the root `evals` package.
+
 ## Key Design Decisions
 
 **ASSIST XSRF handshake:** The ASSIST API requires a homepage request first to obtain a session cookie and `X-XSRF-TOKEN`. All API calls must include this header. See `src/assist/http.py`.
@@ -94,10 +151,14 @@ FastAPI app serving a search UI.
 
 **Provider pattern:** Adding a new CC schedule system = implement `ScheduleProvider` protocol + register in `CompositeProvider`. No other changes needed.
 
-**Replay specs are data, not code:** a spec is a schema-validated JSON file of at most five HTTP steps plus an extraction block. No loops, conditionals, JavaScript, or login. Pagination is a declared, bounded primitive. At runtime an invalid spec is skipped and logged (that college shows "Couldn't check"; every other college still works); the test suite and `cli validate` fail fast on it. `tests/schedule/replay/test_specs_registry.py` requires every `"system": "replay"` catalog entry to have a spec with the same `cc_id` and name.
+**Replay specs are data, not code:** a spec is a schema-validated JSON file of at most five HTTP steps plus an extraction block. No loops, conditionals, JavaScript, or login. Pagination is a declared, bounded primitive. At runtime an invalid spec is skipped and logged (that college shows "Couldn't check"; every other college still works); the test suite and `cli validate` fail fast on it. `tests/schedule/replay/test_specs_registry.py` requires every `"system": "replay"` catalog entry to have a spec with the same `cc_id` and name. A spec may add an optional `listing` block (steps plus `code`/`title`/`description` rules) that lists a whole `{subject}`; the discover pass uses it, and load-time checks cover it.
 
 **ASSIST re-ingest replaces a college's rows:** schedule queries read every ingest run for a major, so `save_rows` deletes a college's rows from earlier runs once a new run has re-parsed that college's agreement into at least one row. Colleges a run did not reach, or that parse to nothing (likely an ASSIST layout change, logged), keep their rows. After a parser fix, re-run `ingest` (cached PDFs in `data/assist_artifacts/` are reused).
 
-**Course-code drift is a Phase 3 problem:** Riverside district specs send ASSIST codes as-is (`MAT-1B`), which no longer match live codes (`MATH-C2220`); those courses show "Not offered" until the alias table lands.
+**Course-code drift is handled by aliases, never by editing ASSIST rows.** Each search looks an ASSIST course up under every live code the resolver gives (committed seeds plus SQLite aliases), and the web shows "Matched via alias: listed as MATH-C2220". New aliases come from `matching discover`: first catalog "(Formerly X)" notes, which are deterministic; then, if `DECISION_PROVIDER` is set, `course_equivalent` decisions. The best candidate at or above 0.9 is `accepted`, others at or above 0.5 go to `review`, and the rest are stored as `rejected` — not discarded, just excluded from query-time lookups, so a later `discover` run skips a pair it has already scored. A human `approve`/`reject` is final: no automated pass overwrites it, and a reviewed rejection blocks the same seed pair at query time (it does not remove anything from the committed seed file — to drop a bad row already committed to `src/matching/data/course_aliases.csv`, edit that CSV directly). The resolver returns at most 3 live codes per ASSIST code, and the last slot is always the ASSIST code itself (at most 2 alias/renamed codes come first), so a wrong alias can never hide a course still listed under its old code. `matching discover` also exits 1 with a one-line message when the college's listing fails (network or portal error) or when the catalog marks the college `status: "unsupported"`; it logs a warning when it falls back (`needs_decider`, `decider_unavailable`). `iter_discover` yields each course's outcome as it is decided so the CLI can store it immediately; once a decision backend call raises `DecisionUnavailable`, the run stops asking it and reports every remaining course as `decider_unavailable` instead of retrying. The RCCD site's TLS chain is incomplete for Python, so its crosswalk is committed data, refreshed with `import-rccd` from a saved page.
 
-**SQLite at `data/assist.sqlite3`:** Tables are `ingest_runs` and `articulation_rows`. The DB is populated by the ASSIST ingest pipeline before schedule queries can work.
+**Follow-up (not fixed yet): the "formerly" paired regex has no left boundary.** In `src/matching/formerly.py`, `_PAIRED_RE` matches `{code}\s*\({formerly}\s+{code}\)` with nothing anchoring where the first code starts, so a description like `"C-ID MATH 210 (formerly MATH 5A)"` can pick up the C-ID code as the "new" code instead of the college's own live code. Left as-is pending a real example to design the fix against.
+
+**No model in the query path.** Decision calls happen only in `matching discover` and `evals.runner`. Vendor SDKs are optional extras, each imported in exactly one file.
+
+**SQLite at `data/assist.sqlite3`:** Tables are `ingest_runs`, `articulation_rows`, and `course_aliases` (created by `src/matching/store.py`). The DB is populated by the ASSIST ingest pipeline before schedule queries can work.

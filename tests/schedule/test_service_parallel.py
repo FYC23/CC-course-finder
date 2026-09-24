@@ -10,6 +10,8 @@ import requests
 
 from src.assist.models import ArticulationRow, IngestRun
 from src.assist.store import ensure_db, save_rows, save_run
+from src.matching.models import CourseAlias
+from src.matching.resolve import CourseResolver
 from src.schedule.models import CourseAvailability
 from src.schedule.service import ScheduleService
 from src.schedule.term import TermNotListedError
@@ -149,6 +151,31 @@ def test_skips_rest_of_college_after_it_cannot_be_reached(tmp_path: Path) -> Non
     assert all("skipped" in a.raw_summary for a in evc[1:])
 
 
+def test_stops_between_live_code_lookups_when_cancelled(tmp_path: Path) -> None:
+    """A course with two live codes (an alias plus the ASSIST code) stops after the
+    first if cancellation fires in between, instead of always trying every code."""
+    db = tmp_path / "a.sqlite3"
+    _seed(db, {EVC: ["MATH 1"]})
+    calls: list[str] = []
+    cancelled = threading.Event()
+
+    def on_search(_provider, _source, code):
+        calls.append(code)
+        cancelled.set()
+
+    resolver = CourseResolver(aliases=[
+        CourseAlias(cc_id=EVC, old_code="MATH 1", new_code="MATH 100", source="test", status="verified"),
+    ])
+    service = _service(db, on_search, resolver_loader=lambda _db_path: resolver)
+    plan = service.plan(target_school=SCHOOL, target_major=MAJOR, term_label="Summer 2026")
+    assert len(plan.colleges[0].lookups_for("MATH 1")) == 2  # the alias, then the ASSIST code itself
+
+    result = service._lookup_college(plan.colleges[0], plan.term, cancelled)
+
+    assert calls == ["MATH 100"]
+    assert [a.course_code for a in result.availabilities] == ["MATH 1"]
+
+
 def test_other_errors_do_not_skip_the_rest_of_the_college(tmp_path: Path) -> None:
     db = tmp_path / "a.sqlite3"
     _seed(db, {EVC: ["MATH 1", "MATH 2"]})
@@ -249,7 +276,7 @@ def test_successful_lookup_has_no_lookup_error(tmp_path: Path) -> None:
 
 
 from src.schedule.errors import PortalChanged  # noqa: E402
-from src.schedule.service import _lookup_error_reason  # noqa: E402
+from src.schedule.lookups import lookup_error_reason as _lookup_error_reason  # noqa: E402
 from src.schedule.term import parse_term_label as _parse_term  # noqa: E402
 
 

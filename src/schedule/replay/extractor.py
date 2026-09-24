@@ -110,11 +110,11 @@ def extract_sections(
 
 def _rows(body: str, extract: Extract) -> list[Row]:
     if extract.kind == "json":
-        return _json_rows(body, extract.rows)
-    return _html_rows(body, extract)
+        return json_rows(body, extract.rows)
+    return html_rows(body, extract.rows, extract.marker)
 
 
-def _json_rows(body: str, rows_path: str) -> list[Row]:
+def json_rows(body: str, rows_path: str) -> list[Row]:
     try:
         doc = json.loads(body)
     except json.JSONDecodeError as exc:
@@ -130,11 +130,11 @@ def _json_rows(body: str, rows_path: str) -> list[Row]:
     return [JsonRow(node) for node in container]
 
 
-def _html_rows(body: str, extract: Extract) -> list[Row]:
+def html_rows(body: str, rows_selector: str, marker: str | None) -> list[Row]:
     soup = BeautifulSoup(body, "html.parser")
-    if extract.marker and soup.select_one(extract.marker) is None:
-        raise PortalChanged(f"page marker {extract.marker!r} not found")
-    return [HtmlRow(el) for el in soup.select(extract.rows)]
+    if marker and soup.select_one(marker) is None:
+        raise PortalChanged(f"page marker {marker!r} not found")
+    return [HtmlRow(el) for el in soup.select(rows_selector)]
 
 
 def _passes_filters(row: Row, filters: Sequence[FilterRule], values: Mapping[str, str]) -> bool:

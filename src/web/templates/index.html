@@ -636,6 +636,14 @@
           var courseTitle = document.createElement('small');
           courseTitle.textContent = courseRow.course_title;
           courseTd.appendChild(courseTitle);
+          if (courseRow.matched_code) {
+            var matched = document.createElement('small');
+            matched.className = 'matched-via';
+            matched.textContent = 'Matched via alias: listed as ' + courseRow.matched_code +
+              (courseRow.match_status === 'accepted' ? ' (automatic match)' : '');
+            matched.title = 'Mapping source: ' + courseRow.match_source;
+            courseTd.appendChild(matched);
+          }
           var otherRequirements = [];
           for (var otherReqIdx = 0; otherReqIdx < courseRequirements.length; otherReqIdx++) {
             var reqValue = courseRequirements[otherReqIdx];

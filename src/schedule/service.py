@@ -3,20 +3,23 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import groupby
 from pathlib import Path
+from types import MappingProxyType
 from urllib.parse import urlsplit
 
 import requests
 
+from src.matching.resolve import CourseResolver, LiveCode, load_resolver
+
 from .catalog import get_college_source
-from .errors import PortalChanged, SpecUnavailable
+from .lookups import Attempt, merge_attempts
 from .models import CollegeScheduleSource, CourseAvailability
 from .providers import ScheduleProvider
-from .term import ParsedTerm, TermNotListedError, parse_term_label
+from .term import ParsedTerm, parse_term_label
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +29,22 @@ DEFAULT_MAX_WORKERS = 16
 DEFAULT_MAX_PER_HOST = 3
 
 
+def _no_live_codes() -> Mapping[str, tuple[LiveCode, ...]]:
+    return MappingProxyType({})
+
+
 @dataclass(frozen=True)
 class CollegeLookups:
     source: CollegeScheduleSource
     course_codes: tuple[str, ...]
+    # ASSIST code -> codes to look it up under this term (from src/matching). A code
+    # missing here is looked up under itself only.
+    live_codes: Mapping[str, tuple[LiveCode, ...]] = field(
+        default_factory=_no_live_codes, compare=False, hash=False
+    )
+
+    def lookups_for(self, course_code: str) -> tuple[LiveCode, ...]:
+        return self.live_codes.get(course_code) or (LiveCode(course_code),)
 
 
 @dataclass(frozen=True)
@@ -60,6 +75,7 @@ class ScheduleService:
         provider_factory: Callable[[], ScheduleProvider] | None = None,
         max_workers: int = DEFAULT_MAX_WORKERS,
         max_per_host: int = DEFAULT_MAX_PER_HOST,
+        resolver_loader: Callable[[Path], CourseResolver] | None = None,
     ) -> None:
         if (provider is None) == (provider_factory is None):
             raise ValueError("Pass exactly one of provider or provider_factory")
@@ -73,6 +89,7 @@ class ScheduleService:
         self._max_per_host = max(1, max_per_host)
         self._host_limits: dict[str, threading.BoundedSemaphore] = {}
         self._host_limits_lock = threading.Lock()
+        self._resolver_loader = resolver_loader or load_resolver
 
     def query(
         self,
@@ -114,6 +131,7 @@ class ScheduleService:
             requirement_filter=requirement_filter,
         )
         checker = self._provider_factory()
+        resolver = self._resolver_loader(self._db_path)
         colleges: list[CollegeLookups] = []
         for row_cc_id, keys in groupby(course_keys, key=lambda key: key[0]):
             try:
@@ -128,7 +146,8 @@ class ScheduleService:
                     f"(cc_id={source.cc_id}, cc_name={source.cc_name})"
                 )
             codes = tuple(dict.fromkeys(code for _, code in keys))
-            colleges.append(CollegeLookups(source=source, course_codes=codes))
+            live = MappingProxyType({code: resolver.live_codes(source.cc_id, code) for code in codes})
+            colleges.append(CollegeLookups(source=source, course_codes=codes, live_codes=live))
         return QueryPlan(term=term, colleges=tuple(colleges))
 
     def iter_results(self, plan: QueryPlan) -> Iterator[CollegeResult]:
@@ -168,27 +187,44 @@ class ScheduleService:
         for course_code in college.course_codes:
             if cancelled.is_set():
                 break
-            if unreachable is not None:
-                results.append(_failed(source, term, course_code, unreachable, skipped=True))
-                continue
-            try:
-                with host_limit:
-                    availability = provider.search_course(
-                        source=source, term=term, course_code=course_code
-                    )
-            except Exception as err:
-                logger.exception(
-                    "Schedule lookup failed for cc_id=%s course_code=%r",
-                    source.cc_id,
-                    course_code,
-                )
-                if isinstance(err, requests.ConnectionError):
-                    # The server is down or refusing us; every other course would just
+            attempts: list[Attempt] = []
+            for live in college.lookups_for(course_code):
+                if cancelled.is_set():
+                    break
+                if unreachable is not None:
+                    attempts.append(Attempt(live, error=unreachable, skipped=True))
+                    continue
+                attempt = self._attempt(provider, host_limit, source, term, live)
+                if isinstance(attempt.error, requests.ConnectionError):
+                    # The server is down or refusing us; every other lookup would just
                     # wait out the same failure.
-                    unreachable = err
-                availability = _failed(source, term, course_code, err, skipped=False)
-            results.append(availability)
+                    unreachable = attempt.error
+                attempts.append(attempt)
+            # Cancelled before this course's first attempt ran: nothing to merge, so it
+            # is left out of the results rather than reported on the strength of no data.
+            if attempts:
+                results.append(
+                    merge_attempts(source=source, term=term, course_code=course_code, attempts=attempts)
+                )
         return CollegeResult(cc_id=source.cc_id, availabilities=tuple(results))
+
+    def _attempt(
+        self,
+        provider: ScheduleProvider,
+        host_limit: threading.BoundedSemaphore,
+        source: CollegeScheduleSource,
+        term: ParsedTerm,
+        live: LiveCode,
+    ) -> Attempt:
+        try:
+            with host_limit:
+                found = provider.search_course(source=source, term=term, course_code=live.code)
+        except Exception as err:
+            logger.exception(
+                "Schedule lookup failed for cc_id=%s course_code=%r", source.cc_id, live.code
+            )
+            return Attempt(live, error=err)
+        return Attempt(live, availability=found)
 
     def _host_limit(self, base_url: str) -> threading.BoundedSemaphore:
         host = urlsplit(base_url).netloc.lower()
@@ -223,44 +259,3 @@ class ScheduleService:
         with sqlite3.connect(self._db_path) as conn:
             rows = conn.execute(sql, params).fetchall()
         return [(int(row[0]), str(row[1])) for row in rows]
-
-
-def _failed(
-    source: CollegeScheduleSource,
-    term: ParsedTerm,
-    course_code: str,
-    err: Exception,
-    *,
-    skipped: bool,
-) -> CourseAvailability:
-    summary = f"[request_error type={type(err).__name__}]"
-    if skipped:
-        summary = f"[skipped: college unreachable earlier in this search; {summary[1:]}"
-    return CourseAvailability(
-        cc_id=source.cc_id,
-        cc_name=source.cc_name,
-        term=term.label,
-        course_code=course_code,
-        offered=False,
-        sections=[],
-        source_url=source.base_url,
-        raw_summary=summary,
-        lookup_error=_lookup_error_reason(err, term),
-    )
-
-
-def _lookup_error_reason(err: Exception, term: ParsedTerm) -> str:
-    """A student-facing reason the course could not be checked (no internals leaked)."""
-    if isinstance(err, requests.ConnectionError):
-        return "Couldn't reach the college's schedule server."
-    if isinstance(err, requests.Timeout):
-        return "The college's schedule server took too long to answer."
-    if isinstance(err, requests.HTTPError):
-        return "The college's schedule server returned an error."
-    if isinstance(err, TermNotListedError):
-        return f"{term.label} isn't listed on the college's schedule site."
-    if isinstance(err, SpecUnavailable):
-        return "This college's schedule lookup is unavailable right now."
-    if isinstance(err, PortalChanged):
-        return "The college's schedule site changed; this lookup needs to be re-recorded."
-    return "Something went wrong reading the college's schedule."

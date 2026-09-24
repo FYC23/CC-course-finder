@@ -151,3 +151,20 @@ def test_lookup_error_is_none_when_checked_or_articulation_only() -> None:
     results = join_results(rows, [avail(cc_id=2, course_code="CS 49", offered=False)])
 
     assert [(r.offered_this_term, r.lookup_error) for r in results] == [(False, None), (None, None)]
+
+
+def test_alias_match_is_carried_to_the_result() -> None:
+    matched = CourseAvailability(
+        cc_id=78, cc_name="Test CC", term="Fall 2026", course_code="MAT 1B", offered=True, sections=[],
+        source_url="https://example.com", matched_code="MATH-C2220", match_source="rccd_crosswalk",
+        match_status="verified",
+    )
+    (result,) = join_results([F(cc_id=78, course_code="MAT 1B").row()], [matched])
+    assert (result.matched_code, result.match_source, result.match_status) == (
+        "MATH-C2220", "rccd_crosswalk", "verified",
+    )
+
+
+def test_no_alias_match_is_none() -> None:
+    (result,) = join_results([F(cc_id=2, course_code="CS 1").row()], [avail(2, "CS 1")])
+    assert (result.matched_code, result.match_source, result.match_status) == (None, None, None)

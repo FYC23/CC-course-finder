@@ -177,3 +177,64 @@ def test_clean_single_spaced_lines_still_parse() -> None:
 
 def test_inline_arrow_without_a_cc_course_is_skipped() -> None:
     assert _pairs("MATH 31B ← No Course Articulated") == set()
+
+
+def _single_cc_row(*cc_lines: str):
+    raw = _pdf_text("MATH| 31A", "- |Differential and Integral Calculus (4.00)", "←", *cc_lines)
+    (row,) = parse_articulation_rows(_REF, raw)
+    return row
+
+
+def test_cc_course_title_is_kept() -> None:
+    row = _single_cc_row("MTH| 210", "- |Calculus and Analytic Geometry I (5.00)")
+    assert row.course_title == "Calculus and Analytic Geometry I"
+
+
+def test_wrapped_cc_course_title_is_joined() -> None:
+    row = _single_cc_row("COMSC| 076", "- |Computer Science II: Introduction to Data Structures", "(3.00)")
+    assert row.course_title == "Computer Science II: Introduction to Data Structures"
+
+
+def test_title_keeps_case_and_punctuation_and_ignores_same_as_line() -> None:
+    row = _single_cc_row(
+        "CIS| 17A", "- |Programming Concepts and Methodology II: C++ (3.00)", "Same-As: CSC| 17A"
+    )
+    assert row.course_title == "Programming Concepts and Methodology II: C++"
+
+
+def test_cc_course_without_title_line_has_empty_title() -> None:
+    assert _single_cc_row("MATH| 1A").course_title == ""
+
+
+def test_title_without_units_within_four_lines_is_empty() -> None:
+    row = _single_cc_row("MATH| 1A", "- |Calculus", "I", "continued", "more")
+    assert row.course_title == ""
+
+
+def test_inline_arrow_rows_have_empty_title() -> None:
+    (row,) = parse_articulation_rows(_REF, "MATH 31B ← MAT 1B")
+    assert row.course_title == ""
+
+
+def test_riverside_excerpt_row_carries_its_title() -> None:
+    (row,) = parse_articulation_rows(_REF, _RIVERSIDE)
+    assert (row.course_code, row.course_title) == (
+        "CIS 17A", "Programming Concepts and Methodology II: C++",
+    )
+
+
+def test_cc_course_followed_by_separator_has_empty_title() -> None:
+    """A "---" separator line must never be mistaken for the start of a title block, even
+    when a later course's units-bearing title line falls inside the lookahead window."""
+    raw = _pdf_text(
+        "MATH| 31A",
+        "- |Differential and Integral Calculus (4.00)",
+        "←",
+        "MATH| 1A",
+        "---",
+        "Or",
+        "---",
+        "- |Calculus II (4.00)",
+    )
+    (row,) = parse_articulation_rows(_REF, raw)
+    assert (row.course_code, row.course_title) == ("MATH 1A", "")
