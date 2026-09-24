@@ -173,16 +173,17 @@ def test_get_service_rebuilds_when_db_path_changes(
     created: list[Path] = []
 
     class _FakeService:
-        def __init__(self, *, db_path: Path, provider: object) -> None:
+        def __init__(self, *, db_path: Path, provider_factory: object) -> None:
             created.append(db_path)
             self.db_path = db_path
-            self.provider = provider
+            self.provider_factory = provider_factory
 
         def query(self, **_kwargs):  # type: ignore[no-untyped-def]
             return []
 
     monkeypatch.setattr(search_router, "ScheduleService", _FakeService)  # type: ignore[assignment]
-    monkeypatch.setattr(search_router, "build_composite_provider", lambda: object())
+    factory = lambda: object()  # noqa: E731
+    monkeypatch.setattr(search_router, "build_composite_provider", factory)
 
     search_router._service = None
     search_router._service_db_path = None
@@ -194,6 +195,8 @@ def test_get_service_rebuilds_when_db_path_changes(
 
     assert first is not second
     assert created == [path_a, path_b]
+    # Each college gets a fresh provider from the factory, so lookups can run in parallel.
+    assert first.provider_factory is factory
 
 
 def test_search_accepts_timezone_and_returns_fit(client, monkeypatch):
@@ -242,3 +245,104 @@ def test_search_rejects_unknown_timezone(client, tz):
     res = client.get("/api/search", params={"school": "UCLA", "major": "Computer Science",
                                             "term": "Fall 2026", "tz": tz})
     assert res.status_code == 422
+
+
+def _stream_events(res) -> list[dict]:
+    import json
+
+    return [json.loads(line) for line in res.text.splitlines() if line.strip()]
+
+
+class _StreamService:
+    """Plans one live college (cc_id 2, course CS 1) and yields it from iter_results."""
+
+    def __init__(self, *, colleges=(2,), fail: Exception | None = None) -> None:
+        self._colleges = colleges
+        self._fail = fail
+
+    def plan(self, **kwargs):
+        from src.schedule.catalog import get_college_source
+        from src.schedule.service import CollegeLookups, QueryPlan
+        from src.schedule.term import parse_term_label
+
+        return QueryPlan(term=parse_term_label(kwargs["term_label"]), colleges=tuple(
+            CollegeLookups(source=get_college_source(cc), course_codes=("CS 1",))
+            for cc in self._colleges))
+
+    def iter_results(self, plan):
+        from src.schedule.models import CourseAvailability, ParsedSection
+        from src.schedule.service import CollegeResult
+
+        if self._fail is not None:
+            raise self._fail
+        for college in plan.colleges:
+            yield CollegeResult(cc_id=college.source.cc_id, availabilities=(CourseAvailability(
+                cc_id=college.source.cc_id, cc_name="Test CC", term=plan.term.label,
+                course_code="CS 1", offered=True,
+                sections=[ParsedSection("9", "open", "async_online", "T", "")],
+                source_url="https://example.edu"),))
+
+
+_STREAM_PARAMS = {"school": "UCLA", "major": "Computer Science", "term": "Fall 2026"}
+
+
+def test_search_stream_sends_start_then_each_college_then_done(client, monkeypatch):
+    from src.web.routers import search as search_router
+
+    monkeypatch.setattr(search_router, "_get_service", lambda: _StreamService())
+    res = client.get("/api/search/stream", params={**_STREAM_PARAMS, "tz": "Asia/Shanghai"})
+
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/x-ndjson")
+    start, college, done = _stream_events(res)
+    assert start == {"type": "start", "total": 1, "results": []}
+    assert (college["type"], college["cc_id"], college["done"], college["total"]) == ("college", 2, 1, 1)
+    [row] = college["results"]
+    assert (row["course_code"], row["offered_this_term"]) == ("CS 1", True)
+    assert row["sections"][0]["fit"] == "async"
+    assert done == {"type": "done", "done": 1, "total": 1}
+
+
+def test_search_stream_sends_articulation_only_rows_up_front(client, monkeypatch):
+    """Colleges with no live schedule lookup are known at once; show them immediately."""
+    from src.web.routers import search as search_router
+
+    monkeypatch.setattr(search_router, "_get_service", lambda: _StreamService(colleges=()))
+    start, done = _stream_events(client.get("/api/search/stream", params=_STREAM_PARAMS))
+
+    assert start["total"] == 0
+    [row] = start["results"]
+    assert (row["cc_id"], row["course_code"], row["offered_this_term"]) == (2, "CS 1", None)
+    assert done == {"type": "done", "done": 0, "total": 0}
+
+
+def test_search_stream_reports_failure_mid_stream(client, monkeypatch, caplog):
+    from src.web.routers import search as search_router
+
+    monkeypatch.setattr(search_router, "_get_service",
+                        lambda: _StreamService(fail=RuntimeError("secret internals")))
+    events = _stream_events(client.get("/api/search/stream", params=_STREAM_PARAMS))
+
+    assert events[0]["type"] == "start"
+    assert events[-1] == {"type": "error", "detail": "Schedule lookup failed partway through."}
+    assert "secret internals" in caplog.text
+
+
+@pytest.mark.parametrize("params,status", [
+    ({**_STREAM_PARAMS, "term": "bad"}, 422),
+    ({**_STREAM_PARAMS, "tz": "Mars/Olympus_Mons"}, 422),
+    ({**_STREAM_PARAMS, "school": "Unknown"}, 409),
+])
+def test_search_stream_rejects_bad_requests_before_streaming(client, params, status):
+    assert client.get("/api/search/stream", params=params).status_code == status
+
+
+def test_search_stream_unsupported_provider_is_422(client, monkeypatch):
+    from src.web.routers import search as search_router
+
+    class _Unsupported:
+        def plan(self, **_):
+            raise ValueError("No provider configured for source system='x'")
+
+    monkeypatch.setattr(search_router, "_get_service", lambda: _Unsupported())
+    assert client.get("/api/search/stream", params=_STREAM_PARAMS).status_code == 422

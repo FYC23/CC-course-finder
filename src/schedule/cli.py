@@ -75,7 +75,7 @@ def query(
                 param_hint="--cc-id",
             )
 
-    service = ScheduleService(db_path=DB_PATH, provider=provider)
+    service = ScheduleService(db_path=DB_PATH, provider_factory=build_composite_provider)
     try:
         rows = service.query(
             target_school=target_school,

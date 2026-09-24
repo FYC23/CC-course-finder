@@ -33,7 +33,7 @@ def test_cli_rejects_invalid_cc_id() -> None:
 
 def test_cli_exits_code_2_on_bad_term(monkeypatch) -> None:
     class _FakeService:
-        def __init__(self, db_path, provider) -> None:
+        def __init__(self, db_path, provider_factory) -> None:
             pass
 
         def query(self, **kwargs):
@@ -47,7 +47,7 @@ def test_cli_exits_code_2_on_bad_term(monkeypatch) -> None:
 
 def test_cli_exits_code_1_when_service_raises_request_exception(monkeypatch) -> None:
     class _FakeService:
-        def __init__(self, db_path, provider) -> None:
+        def __init__(self, db_path, provider_factory) -> None:
             pass
 
         def query(self, **kwargs):
@@ -189,7 +189,7 @@ def test_cli_all_ccs_passes_none_cc_id(monkeypatch, tmp_path: Path) -> None:
     received_cc_ids: list[int | None] = []
 
     class _SpyService:
-        def __init__(self, db_path, provider) -> None:
+        def __init__(self, db_path, provider_factory) -> None:
             pass
 
         def query(self, *, cc_id, **kwargs):
@@ -211,7 +211,7 @@ def test_cli_cc_name_resolves_to_cc_id(monkeypatch, tmp_path: Path) -> None:
     received_cc_ids: list[int | None] = []
 
     class _SpyService:
-        def __init__(self, db_path, provider) -> None:
+        def __init__(self, db_path, provider_factory) -> None:
             pass
 
         def query(self, *, cc_id, **kwargs):
@@ -235,3 +235,25 @@ def test_cli_cc_name_and_cc_id_mutually_exclusive() -> None:
     result = _RUNNER.invoke(schedule_cli.app, [*_BASE_ARGS, "--cc-name", "evergreen", "--cc-id", "2"])
     assert result.exit_code == 2
     assert "mutually exclusive" in result.output
+
+
+def test_cli_looks_colleges_up_in_parallel(monkeypatch, tmp_path: Path) -> None:
+    """The CLI hands the service a provider factory (one provider per college), not one
+    shared provider, so colleges are looked up at the same time."""
+    db_path = tmp_path / "assist.sqlite3"
+    _seed_row(db_path)
+    monkeypatch.setattr(schedule_cli, "DB_PATH", db_path)
+    received: dict[str, object] = {}
+
+    class _SpyService:
+        def __init__(self, db_path, provider_factory) -> None:
+            received["factory"] = provider_factory
+
+        def query(self, **kwargs):
+            return []
+
+    monkeypatch.setattr(schedule_cli, "ScheduleService", _SpyService)
+    result = _RUNNER.invoke(schedule_cli.app, _BASE_ARGS)
+
+    assert result.exit_code == 0
+    assert received["factory"] is schedule_cli.build_composite_provider
