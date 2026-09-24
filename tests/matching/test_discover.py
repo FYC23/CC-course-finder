@@ -7,7 +7,7 @@ from pathlib import Path
 from src.decisions.questions import COURSE_EQUIVALENT
 from src.decisions.types import BooleanAnswer, DecisionUnavailable
 from src.matching.discover import (
-    AssistCourse, aliases_from_scores, discover_aliases, rank_candidates,
+    AssistCourse, aliases_from_scores, discover_aliases, iter_discover, rank_candidates,
 )
 from src.matching.models import CourseAlias, SubjectRename
 from src.matching.resolve import CourseResolver
@@ -42,9 +42,12 @@ class _Decider:
     name = "stub"
 
     def __init__(self, probabilities, error=None):
-        self._probabilities, self._error, self.asked = probabilities, error, []
+        self._probabilities, self._error = probabilities, error
+        self.asked: list[str] = []
+        self.call_count = 0
 
     def decide(self, state, questions):
+        self.call_count += 1
         if self._error:
             raise self._error
         live = state["live_course"]["code"]
@@ -131,6 +134,30 @@ def test_decider_failure_logs_a_warning(caplog):
         (outcome,) = _run(_RIVERSIDE, [AssistCourse("MAT 1B", "Calculus II", "MATH 31B")],
                           _Lister({"MAT": _RCC_MATH}), decider=_Decider({}, error=DecisionUnavailable("rate limited")))
     assert "MAT 1B" in caplog.text and "rate limited" in caplog.text
+
+
+def test_decider_unavailable_is_remembered_for_the_rest_of_the_run():
+    decider = _Decider({}, error=DecisionUnavailable("rate limited"))
+    outcomes = _run(_RIVERSIDE, [AssistCourse("MAT 1B", "Calculus II", "MATH 31B"),
+                                  AssistCourse("MAT 1A", "Calculus I", "MATH 31A")],
+                     _Lister({"MAT": _RCC_MATH}), decider=decider)
+    assert [o.status for o in outcomes] == ["decider_unavailable", "decider_unavailable"]
+    assert decider.call_count == 1
+    assert "rate limited" in outcomes[1].note
+
+
+def test_iter_discover_yields_lazily():
+    lister = _Lister({"MATH": _CATALOG})
+    gen = iter_discover(source=_FRESNO, term=_TERM, courses=[
+        AssistCourse("MATH 6", "Mathematical Analysis III", "MATH 32A"),
+        AssistCourse("PHYS 4A", "General Physics", "PHYS 1A"),
+    ], lister=lister, resolver=CourseResolver(), decider=None, known_pairs=frozenset())
+    first = next(gen)
+    assert first.status == "matched"
+    assert lister.calls == ["MATH"]
+    remaining = list(gen)
+    assert lister.calls == ["MATH", "PHYS"]
+    assert len(remaining) == 1
 
 
 def test_listing_unsupported_is_reported_for_every_course():

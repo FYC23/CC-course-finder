@@ -30,7 +30,7 @@ from src.schedule.errors import ScheduleLookupError
 from src.schedule.term import TermNotListedError, parse_term_label
 
 from .codes import split_code
-from .discover import AssistCourse, DiscoverOutcome, discover_aliases
+from .discover import AssistCourse, DiscoverOutcome, iter_discover
 from .models import CourseAlias
 from .resolve import load_resolver
 from .seeds import ALIASES_FILE, load_seed_aliases
@@ -172,19 +172,21 @@ def discover(
         typer.echo(f"Decision backend misconfigured: {err}", err=True)
         raise typer.Exit(code=2) from err
     known = frozenset((a.cc_id, a.old_key, a.new_key) for a in list_aliases(db, cc_id=cc_id))
+    counts: Counter[str] = Counter()
     try:
-        outcomes = discover_aliases(source=source, term=parsed_term, courses=courses,
-                                    lister=build_composite_provider(), resolver=load_resolver(db),
-                                    decider=decider, known_pairs=known)
+        for outcome in iter_discover(source=source, term=parsed_term, courses=courses,
+                                     lister=build_composite_provider(), resolver=load_resolver(db),
+                                     decider=decider, known_pairs=known):
+            _report(outcome, db)
+            counts[outcome.status] += 1
     except TermNotListedError as err:
         typer.echo(f"{term} is not listed on the college's schedule site: {err}", err=True)
         raise typer.Exit(code=1) from err
     except (requests.RequestException, ScheduleLookupError) as err:
         typer.echo(f"{source.cc_name}: {type(err).__name__}: {err}", err=True)
         raise typer.Exit(code=1) from err
-    for outcome in outcomes:
-        _report(outcome, db)
-    counts = Counter(outcome.status for outcome in outcomes)
+    # Summary prints only on success; outcomes stored before a mid-run failure are kept
+    # (see `_report` above), but the run did not finish so there is no full count to show.
     typer.echo("Summary: " + ", ".join(f"{status}={n}" for status, n in sorted(counts.items())))
 
 

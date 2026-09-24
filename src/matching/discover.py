@@ -5,7 +5,7 @@ and the caller decides what to store. Runs from `matching discover`, never per s
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 
 from src.decisions.questions import COURSE_EQUIVALENT, QUESTIONS, course_equivalent_state
@@ -59,12 +59,21 @@ class _Listings:
         return self._cache[key]
 
 
+class _DeciderState:
+    """Shares one decision backend across a run and remembers whether it has already
+    failed, so a `DecisionUnavailable` from an earlier course stops further calls."""
+
+    def __init__(self, decider: DecisionProvider | None) -> None:
+        self.decider = decider
+        self.unavailable_note: str | None = None
+
+
 @dataclass(frozen=True)
 class _Context:
     source: CollegeScheduleSource
     listings: _Listings
     resolver: CourseResolver
-    decider: DecisionProvider | None
+    decider_state: _DeciderState
     known_pairs: frozenset[Pair] = field(default_factory=frozenset)
 
 
@@ -78,11 +87,39 @@ def discover_aliases(
     decider: DecisionProvider | None,
     known_pairs: frozenset[Pair] = frozenset(),
 ) -> tuple[DiscoverOutcome, ...]:
-    context = _Context(source, _Listings(lister, source, term), resolver, decider, known_pairs)
-    try:
-        return tuple(_discover_one(context, course) for course in courses)
-    except ListingUnsupported as err:
-        return tuple(DiscoverOutcome(c.code, "listing_unsupported", note=str(err)) for c in courses)
+    """Thin wrapper over `iter_discover` for callers that want every outcome at once."""
+    return tuple(iter_discover(
+        source=source, term=term, courses=courses, lister=lister,
+        resolver=resolver, decider=decider, known_pairs=known_pairs,
+    ))
+
+
+def iter_discover(
+    *,
+    source: CollegeScheduleSource,
+    term: ParsedTerm,
+    courses: Sequence[AssistCourse],
+    lister: SubjectLister,
+    resolver: CourseResolver,
+    decider: DecisionProvider | None,
+    known_pairs: frozenset[Pair] = frozenset(),
+) -> Iterator[DiscoverOutcome]:
+    """Yield each course's `DiscoverOutcome` as soon as it is decided, so a caller can
+    store outcomes as they arrive instead of losing everything to a later error.
+
+    If listing a subject raises `ListingUnsupported`, every course from that point on
+    (the current one plus any not yet yielded) is reported `listing_unsupported`, since
+    that error always fires on the first listing call for this college.
+    """
+    context = _Context(source, _Listings(lister, source, term), resolver, _DeciderState(decider), known_pairs)
+    course_list = list(courses)
+    for index, course in enumerate(course_list):
+        try:
+            yield _discover_one(context, course)
+        except ListingUnsupported as err:
+            for remaining in course_list[index:]:
+                yield DiscoverOutcome(remaining.code, "listing_unsupported", note=str(err))
+            return
 
 
 def _discover_one(ctx: _Context, course: AssistCourse) -> DiscoverOutcome:
@@ -106,7 +143,8 @@ def _discover_one(ctx: _Context, course: AssistCourse) -> DiscoverOutcome:
 
 
 def _decide(ctx: _Context, course: AssistCourse, listed: Sequence[ListedCourse]) -> DiscoverOutcome:
-    if ctx.decider is None:
+    state = ctx.decider_state
+    if state.decider is None:
         note = "DECISION_PROVIDER=none; add an alias by hand or set a provider"
         logger.warning("discover needs_decider for cc_id=%s course=%s: %s", ctx.source.cc_id, course.code, note)
         return DiscoverOutcome(course.code, "needs_decider", note=note)
@@ -115,6 +153,9 @@ def _decide(ctx: _Context, course: AssistCourse, listed: Sequence[ListedCourse])
     candidates = rank_candidates(course, listed, cc_id=ctx.source.cc_id, known_pairs=ctx.known_pairs)
     if not candidates:
         return DiscoverOutcome(course.code, "no_candidates", note="nothing new to ask about in this listing")
+    if state.unavailable_note is not None:
+        note = f"decider unavailable earlier in this run: {state.unavailable_note}"
+        return DiscoverOutcome(course.code, "decider_unavailable", note=note)
     try:
         scored = tuple(
             (item, _probability(ctx, course, item)) for item in candidates[:CANDIDATES_PER_COURSE]
@@ -123,8 +164,9 @@ def _decide(ctx: _Context, course: AssistCourse, listed: Sequence[ListedCourse])
         logger.warning(
             "discover decider_unavailable for cc_id=%s course=%s: %s", ctx.source.cc_id, course.code, err
         )
+        state.unavailable_note = str(err)
         return DiscoverOutcome(course.code, "decider_unavailable", note=str(err))
-    aliases = aliases_from_scores(ctx.source.cc_id, course, scored, ctx.decider.name)
+    aliases = aliases_from_scores(ctx.source.cc_id, course, scored, state.decider.name)
     return DiscoverOutcome(course.code, "decided", aliases)
 
 
@@ -134,7 +176,9 @@ def _probability(ctx: _Context, course: AssistCourse, item: ListedCourse) -> flo
         articulates_to=course.articulates_to, live_code=item.code, live_title=item.title,
         live_description=item.description,
     )
-    answer = ctx.decider.decide(state, {COURSE_EQUIVALENT: QUESTIONS[COURSE_EQUIVALENT]})[COURSE_EQUIVALENT]
+    decider = ctx.decider_state.decider
+    assert decider is not None  # guarded by the caller's `state.decider is None` check
+    answer = decider.decide(state, {COURSE_EQUIVALENT: QUESTIONS[COURSE_EQUIVALENT]})[COURSE_EQUIVALENT]
     if not isinstance(answer, BooleanAnswer):
         raise DecisionUnavailable(f"course_equivalent answer was {type(answer).__name__}, not BooleanAnswer")
     return answer.probability

@@ -143,6 +143,44 @@ def test_discover_lister_network_error_exits_1(db, monkeypatch):
     assert "ConnectionError" in result.output and "connection refused" in result.output
 
 
+def _seed_assist_two_subjects(db: Path) -> None:
+    run = IngestRun.create(target_school=SCHOOL, target_major=MAJOR, agreements_seen=1, rows_written=2)
+    save_run(db, run)
+    save_rows(db, run.run_id, [
+        ArticulationRow(target_school=SCHOOL, target_major=MAJOR, target_requirement="MATH 31A",
+                        uc_equivalent="MATH 31A", cc_name="Fresno City College", cc_id=35,
+                        course_code="MATH 5A", course_title="Mathematical Analysis I",
+                        agreement_id="1", academic_year="2022-2023", source_url="/a/1"),
+        ArticulationRow(target_school=SCHOOL, target_major=MAJOR, target_requirement="PHYS 4A",
+                        uc_equivalent="PHYS 4A", cc_name="Fresno City College", cc_id=35,
+                        course_code="PHYS 2A", course_title="General Physics",
+                        agreement_id="1", academic_year="2022-2023", source_url="/a/1"),
+    ])
+
+
+class _PartialLister:
+    """Lists the first subject fine, then the second subject times out."""
+
+    def __init__(self):
+        self.catalog = parse_catalog_listing(json.loads((_FIXTURES / "colleague" / "fcc_math_catalog.json").read_text()))
+
+    def list_subject(self, *, source, term, subject):
+        if subject == "MATH":
+            return self.catalog
+        raise requests.Timeout("timed out")
+
+
+def test_discover_keeps_earlier_outcomes_after_a_later_listing_error(db, monkeypatch):
+    _seed_assist_two_subjects(db)
+    monkeypatch.setattr(matching_cli, "build_composite_provider", _PartialLister)
+    monkeypatch.setattr(matching_cli, "decision_provider_from_env", lambda: None)
+    result = _invoke("discover", "--cc-id", 35, "--term", "Fall 2026", "--db", db)
+    assert result.exit_code == 1
+    assert "MATH 5A: formerly" in result.stdout
+    aliases = list_aliases(db)
+    assert any(a.old_code == "MATH 5A" and a.new_code == "MATH C2210" for a in aliases)
+
+
 def test_export_appends_new_verified_rows_once(db, tmp_path):
     seed = tmp_path / "course_aliases.csv"
     seed.write_text("cc_ids,old_code,new_code,source,evidence\n78,MAT-1B,MATH-C2220,rccd_crosswalk,page\n")
