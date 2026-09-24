@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from bs4 import BeautifulSoup
+from requests.cookies import CookieConflictError
 
 from ..errors import PortalChanged
 from ..term import ParsedTerm, TermNotListedError, term_match_rank
@@ -33,7 +34,7 @@ def evaluate_capture(
     values: Mapping[str, str],
 ) -> str:
     if capture.kind == "cookie":
-        found = cookies.get(capture.arg)
+        found = _cookie(capture, cookies, step_id)
     elif capture.kind == "regex":
         found = _regex(render(capture.arg, values), response_text)
     elif capture.kind == "json":
@@ -57,6 +58,15 @@ def _raise_missing(name: str, capture: Capture, step_id: str, term: ParsedTerm) 
     )
 
 
+def _cookie(capture: Capture, cookies: Mapping[str, str], step_id: str) -> str | None:
+    try:
+        return cookies.get(capture.arg)
+    except CookieConflictError as exc:
+        raise PortalChanged(
+            f"cookie {capture.arg!r} is set more than once in step {step_id!r}"
+        ) from exc
+
+
 def _json(text: str, step_id: str) -> Any:
     try:
         return json.loads(text)
@@ -76,9 +86,16 @@ def _css(capture: Capture, text: str) -> str | None:
     if element is None:
         return None
     if capture.attr:
-        value = element.get(capture.attr)
-        return str(value) if value is not None else None
+        return _attr_value(element.get(capture.attr))
     return " ".join(element.get_text(" ").split())
+
+
+def _attr_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return " ".join(value)
+    return str(value)
 
 
 def _lookup(capture: Capture, doc: Any, term: ParsedTerm) -> str | None:

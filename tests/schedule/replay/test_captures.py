@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 
 import pytest
+from requests.cookies import RequestsCookieJar
 
 from src.schedule.errors import PortalChanged
 from src.schedule.replay.captures import evaluate_capture
@@ -13,7 +15,7 @@ _FALL = parse_term_label("Fall 2026")
 _VALUES = {"term_label": "Fall 2026"}
 
 
-def _eval(capture: Capture, text: str = "", cookies: dict | None = None, term=_FALL) -> str:
+def _eval(capture: Capture, text: str = "", cookies: Mapping | None = None, term=_FALL) -> str:
     return evaluate_capture(
         name="x", capture=capture, step_id="s", response_text=text,
         cookies=cookies or {}, term=term, values=_VALUES,
@@ -27,6 +29,20 @@ def test_cookie_capture():
 def test_cookie_missing_is_portal_changed():
     with pytest.raises(PortalChanged, match="cookie"):
         _eval(Capture(kind="cookie", arg="XSRF-TOKEN"), cookies={})
+
+
+def test_cookie_capture_from_requests_cookie_jar():
+    jar = RequestsCookieJar()
+    jar.set("XSRF-TOKEN", "abc")
+    assert _eval(Capture(kind="cookie", arg="XSRF-TOKEN"), cookies=jar) == "abc"
+
+
+def test_cookie_conflict_is_portal_changed():
+    jar = RequestsCookieJar()
+    jar.set("XSRF-TOKEN", "a", domain="a.edu")
+    jar.set("XSRF-TOKEN", "b", domain="b.edu")
+    with pytest.raises(PortalChanged, match="XSRF-TOKEN"):
+        _eval(Capture(kind="cookie", arg="XSRF-TOKEN"), cookies=jar)
 
 
 def test_regex_capture_uses_group_one_and_placeholders():
@@ -59,6 +75,11 @@ def test_css_capture_text_and_attr():
     html = "<div><span id='totalResults' style='x'>  15 </span><a class='n' href='/next'>n</a></div>"
     assert _eval(Capture(kind="css", arg="#totalResults"), text=html) == "15"
     assert _eval(Capture(kind="css", arg="a.n", attr="href"), text=html) == "/next"
+
+
+def test_css_multi_valued_attr_is_space_joined():
+    html = "<a class='foo bar'>n</a>"
+    assert _eval(Capture(kind="css", arg="a", attr="class"), text=html) == "foo bar"
 
 
 def test_css_missing_is_portal_changed():
