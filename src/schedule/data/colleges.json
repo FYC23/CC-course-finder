@@ -217,5 +217,15 @@
    "base_url": "https://apps-studentrcc.msappproxy.net", "locations": [],
    "source_url": "https://www.mvc.edu/admissions/schedule-of-classes.html",
    "provenance": {"method": "manual", "verified_at": "2026-09-23", "probe_course": "MATH-C2220"},
-   "note": "Replay spec 149.json (RCCD Class Finder OData, list ScheduleData_MOV). Same numbering caveat as Riverside City College."}
+   "note": "Replay spec 149.json (RCCD Class Finder OData, list ScheduleData_MOV). Same numbering caveat as Riverside City College."},
+  {"cc_id": 71, "cc_name": "Cypress College", "system": "replay",
+   "base_url": "https://schedule.nocccd.edu", "locations": [],
+   "source_url": "https://schedule.nocccd.edu/?college=1",
+   "provenance": {"method": "manual", "verified_at": "2026-09-23", "probe_course": "MATH 150AC"},
+   "note": "Replay spec 71.json (NOCCCD static JSON, sectCampCode 1). Section titles are not available."},
+  {"cc_id": 134, "cc_name": "Fullerton College", "system": "replay",
+   "base_url": "https://schedule.nocccd.edu", "locations": [],
+   "source_url": "https://schedule.nocccd.edu/?college=2",
+   "provenance": {"method": "manual", "verified_at": "2026-09-23", "probe_course": "MATH 151"},
+   "note": "Replay spec 134.json (NOCCCD static JSON, sectCampCode 2). Section titles are not available."}
 ]

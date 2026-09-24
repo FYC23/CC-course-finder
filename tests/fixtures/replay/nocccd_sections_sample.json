@@ -1,0 +1,38 @@
+[
+ {"sectKey": "20261010444", "sectTermCode": "202610", "sectSubjCode": "MATH", "sectCrseNumb": "150AC", "sectCrn": "10444",
+  "sectSchdCode": "02", "sectInsmCode": "02", "sectSstsCode": "A", "sectMaxEnrl": 35, "sectEnrl": 32, "sectSeatsAvail": 3,
+  "sectWaitCount": 0, "sectWaitCapacity": 20, "sectCampCode": "1", "sectInstrName": "Shihabi, Azzam",
+  "sectMeetings": [
+   {"beginTime": "0815", "endTime": "1020", "tueDay": "T", "thuDay": "R", "bldgCode": "SEM", "bldgDesc": "Bldg #35 - CC-Science-Eng-Math",
+    "roomCode": "304", "startDate": "08/24/2026", "endDate": "12/12/2026", "mtypCode": "CLAS", "schdCode": "02", "schdDesc": "Lecture",
+    "meetInstrName": "Shihabi, Azzam"}]},
+ {"sectKey": "20261010434", "sectTermCode": "202610", "sectSubjCode": "MATH", "sectCrseNumb": "011 C", "sectCrn": "10434",
+  "sectSchdCode": "HY", "sectInsmCode": "HYA", "sectSstsCode": "A", "sectMaxEnrl": 30, "sectEnrl": 26, "sectSeatsAvail": 4,
+  "sectWaitCount": 0, "sectWaitCapacity": 20, "sectCampCode": "1", "sectInstrName": "Trevino, Joseph",
+  "sectMeetings": [
+   {"beginTime": "1615", "endTime": "1705", "tueDay": "T", "bldgCode": "SEM", "bldgDesc": "Bldg #35 - CC-Science-Eng-Math",
+    "roomCode": "203", "startDate": "08/24/2026", "endDate": "12/12/2026", "mtypCode": "CLAS", "schdCode": "02", "schdDesc": "Lecture",
+    "meetInstrName": "Trevino, Joseph"},
+   {"bldgCode": "ONLINE", "bldgDesc": "ONLINE", "startDate": "08/24/2026", "endDate": "12/12/2026", "mtypCode": "HY",
+    "schdCode": "HY", "schdDesc": "Hybrid", "meetInstrName": "Trevino, Joseph"}]},
+ {"sectKey": "20261012493", "sectTermCode": "202610", "sectSubjCode": "MATH", "sectCrseNumb": "100 F", "sectCrn": "12493",
+  "sectSchdCode": "72", "sectInsmCode": "72", "sectSstsCode": "A", "sectMaxEnrl": 35, "sectEnrl": 32, "sectSeatsAvail": 3,
+  "sectWaitCount": 0, "sectWaitCapacity": 10, "sectCampCode": "2", "sectInstrName": "Klassen, Kelly",
+  "sectMeetings": [
+   {"bldgCode": "ONLINE", "bldgDesc": "ONLINE", "roomCode": "ONLINE", "startDate": "08/24/2026", "endDate": "12/12/2026",
+    "mtypCode": "ONL", "schdCode": "72", "schdDesc": "Online", "meetInstrName": "Klassen, Kelly"}]},
+ {"sectKey": "20261012522", "sectTermCode": "202610", "sectSubjCode": "MATH", "sectCrseNumb": "151 F", "sectCrn": "12522",
+  "sectSchdCode": "02", "sectInsmCode": "02", "sectSstsCode": "A", "sectMaxEnrl": 30, "sectEnrl": 26, "sectSeatsAvail": 4,
+  "sectWaitCount": 0, "sectWaitCapacity": 10, "sectCampCode": "2", "sectInstrName": "Hoang, Thanh",
+  "sectMeetings": [
+   {"beginTime": "0715", "endTime": "0920", "monDay": "M", "wedDay": "W", "bldgCode": "2400", "bldgDesc": "2400", "roomCode": "206",
+    "startDate": "08/24/2026", "endDate": "12/12/2026", "mtypCode": "CLAS", "schdCode": "02", "schdDesc": "Lecture",
+    "meetInstrName": "Hoang, Thanh"}]},
+ {"sectKey": "20261012523", "sectTermCode": "202610", "sectSubjCode": "MATH", "sectCrseNumb": "151 F", "sectCrn": "12523",
+  "sectSchdCode": "02", "sectInsmCode": "02", "sectSstsCode": "A", "sectMaxEnrl": 30, "sectEnrl": 25, "sectSeatsAvail": 5,
+  "sectWaitCount": 0, "sectWaitCapacity": 10, "sectCampCode": "2", "sectInstrName": "Romero Hernandez, Abraham",
+  "sectMeetings": [
+   {"beginTime": "0815", "endTime": "1020", "tueDay": "T", "thuDay": "R", "bldgCode": "2400", "bldgDesc": "2400", "roomCode": "206",
+    "startDate": "08/24/2026", "endDate": "12/12/2026", "mtypCode": "CLAS", "schdCode": "02", "schdDesc": "Lecture",
+    "meetInstrName": "Romero Hernandez, Abraham"}]}
+]
