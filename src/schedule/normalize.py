@@ -176,7 +176,7 @@ _DAY_NAME_TO_CODE: Mapping[str, str] = {
 _COMPACT_DAYS_RE = re.compile(r"^(?:th|sa|su|[mtwrfsu])+$")
 _COMPACT_DAY_PIECE_RE = re.compile(r"th|sa|su|[mtwrfsu]")
 _ONLINE_LOCATION_WORDS = frozenset(
-    {"on", "onl", "online", "web", "internet", "distance", "remote", "zoom", "virtual"}
+    {"onl", "online", "web", "internet", "distance", "remote", "zoom", "virtual"}
 )
 _NON_ALNUM_RE = re.compile(r"[^A-Za-z0-9]")
 _DIGIT_PREFIX_RE = re.compile(r"^(\d*)(.*)$")
@@ -198,10 +198,15 @@ def days_from_text(raw: object) -> tuple[str, ...]:
 
 
 def location_is_online(location: object) -> bool:
-    """True when a meeting location names an online venue ('ON LINE', 'ONLINE', 'ZOOM')."""
+    """True when a meeting location names an online venue ('ON LINE', 'ONLINE', 'ZOOM').
+    A bare 'on' (as in 'On Campus') does not count; only 'on' directly followed by
+    'line' does, matching the portal's split spelling 'ON LINE'."""
     if not isinstance(location, str):
         return False
-    return bool(frozenset(_WORD_RE.findall(location.lower())) & _ONLINE_LOCATION_WORDS)
+    words = _WORD_RE.findall(location.lower())
+    if any(a == "on" and b == "line" for a, b in zip(words, words[1:])):
+        return True
+    return bool(frozenset(words) & _ONLINE_LOCATION_WORDS)
 
 
 def status_from_seats(

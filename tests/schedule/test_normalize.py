@@ -208,6 +208,8 @@ def test_days_from_text(raw, expected):
         ("Web", True),
         ("MTSC 106", False),
         ("Main Campus, STEM, 310", False),
+        ("On Campus", False),
+        ("ON CAMPUS", False),
         ("", False),
         (None, False),
     ],
