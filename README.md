@@ -253,7 +253,7 @@ New aliases come from an offline discover pass, not from the search path itself:
 uv run python -m src.matching.cli discover --cc-id 78 --term "Fall 2026"
 ```
 
-`discover` first checks the college catalog's own "(Formerly ...)" notes, which need no model. If a course still isn't matched and `DECISION_PROVIDER` is set (`llm` or `jev`; see `.env.example` for the provider/model env vars), it asks a decision backend whether a candidate course is the same course, renumbered or renamed, and stores the result: a confident match is applied automatically, a plausible one waits in a review queue, and the rest are dropped.
+`discover` first checks the college catalog's own "(Formerly ...)" notes, which need no model. If a course still isn't matched and `DECISION_PROVIDER` is set (`llm` or `jev`; see `.env.example` for the provider/model env vars), it asks a decision backend whether a candidate course is the same course, renumbered or renamed, and stores the result: a confident match is applied automatically, a plausible one waits in a review queue, and the rest are stored as `rejected` — not discarded, just not used at query time — so a later `discover` run doesn't ask about the same pair again.
 
 ```bash
 uv run python -m src.matching.cli review                 # aliases waiting for a human
@@ -262,3 +262,5 @@ uv run python -m src.matching.cli export                  # promote verified DB 
 ```
 
 A human `approve`/`reject` is final — no later automated pass overwrites it. `DECISION_PROVIDER=none` (the default) still runs the "(Formerly ...)" pass, just without model-assisted matching. See `evals/README.md` for how the decision backends are evaluated against hand-labeled cases before they're trusted for `discover`.
+
+A `reject` only blocks that pair at query time; it does not remove anything from the committed seed file. To remove a bad row that was already committed to `src/matching/data/course_aliases.csv` (e.g. a wrong RCCD crosswalk entry), edit that CSV directly and commit the change.
