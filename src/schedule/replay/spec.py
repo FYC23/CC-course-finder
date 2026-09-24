@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 
@@ -147,6 +147,24 @@ class Probe:
 
 
 @dataclass(frozen=True)
+class ListingExtract:
+    kind: str
+    rows: str
+    code: ValueRule
+    title: ValueRule
+    marker: str | None = None
+    description: ValueRule | None = None
+
+
+@dataclass(frozen=True)
+class ListingSpec:
+    """Optional steps that list every course in ``{subject}`` this term (discover pass only)."""
+
+    steps: tuple[Step, ...]
+    extract: ListingExtract
+
+
+@dataclass(frozen=True)
 class ReplaySpec:
     cc_id: int
     cc_name: str
@@ -157,6 +175,7 @@ class ReplaySpec:
     steps: tuple[Step, ...]
     extract: Extract
     source_path: str = ""
+    listing: ListingSpec | None = None
 
 
 # --- loading -------------------------------------------------------------------------
@@ -173,6 +192,8 @@ def load_spec(path: Path) -> ReplaySpec:
         raise SpecInvalid(f"{path}: {error.json_path}: {error.message}")
     spec = _build(raw, str(path))
     check_semantics(spec)
+    if spec.listing is not None:
+        check_semantics(listing_view(spec))
     return spec
 
 
@@ -210,6 +231,7 @@ def _build(raw: dict, source_path: str) -> ReplaySpec:
         steps=tuple(_step(s) for s in raw["steps"]),
         extract=_extract(raw["extract"], kind),
         source_path=source_path,
+        listing=_listing(raw.get("listing")),
     )
 
 
@@ -312,4 +334,41 @@ def _extract(raw: dict, kind: str) -> Extract:
         modality_tokens=tuple(value_rule(t, kind) for t in modality.get("tokens", [])),
         modality_map=MappingProxyType({k.lower(): v for k, v in modality.get("map", {}).items()}),
         meetings=tuple(_meeting(m, kind) for m in raw.get("meetings", [])),
+    )
+
+
+def _listing(raw: dict | None) -> ListingSpec | None:
+    if raw is None:
+        return None
+    extract = raw["extract"]
+    kind = extract["kind"]
+    return ListingSpec(
+        steps=tuple(_step(s) for s in raw["steps"]),
+        extract=ListingExtract(
+            kind=kind,
+            rows=extract["rows"],
+            marker=extract.get("marker"),
+            code=value_rule(extract["code"], kind),
+            title=value_rule(extract["title"], kind),
+            description=_opt_rule(extract, "description", kind),
+        ),
+    )
+
+
+def listing_view(spec: ReplaySpec) -> ReplaySpec:
+    """The listing's steps and rules as a plain spec, so load-time checks and the executor
+    treat them exactly like a search. The field names only route rules to the checks."""
+    if spec.listing is None:
+        raise ValueError(f"spec cc_id={spec.cc_id} has no listing")
+    listing = spec.listing.extract
+    fields = {"section_id": listing.code, "title": listing.title}
+    if listing.description is not None:
+        fields["course_code_as_listed"] = listing.description
+    return replace(
+        spec,
+        steps=spec.listing.steps,
+        extract=Extract(kind=listing.kind, rows=listing.rows, marker=listing.marker,
+                        fields=MappingProxyType(fields)),
+        source_path=f"{spec.source_path}#listing",
+        listing=None,
     )

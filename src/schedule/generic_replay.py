@@ -13,12 +13,14 @@ from types import MappingProxyType
 import requests
 
 from .errors import SpecUnavailable
+from .listing import ListedCourse, ListingUnsupported
 from .models import CollegeScheduleSource, CourseAvailability
 from .replay.executor import ReplayExecutor
 from .replay.extractor import extract_sections
 from .replay.inputs import build_values
+from .replay.listing import extract_listing
 from .replay.registry import load_all_specs
-from .replay.spec import ReplaySpec
+from .replay.spec import ReplaySpec, listing_view
 from .term import ParsedTerm
 
 REPLAY_SYSTEM = "replay"
@@ -38,9 +40,7 @@ class GenericReplayProvider:
     def supports_source(self, source: CollegeScheduleSource) -> bool:
         return source.system == REPLAY_SYSTEM
 
-    def search_course(
-        self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str
-    ) -> CourseAvailability:
+    def _spec_for(self, source: CollegeScheduleSource) -> ReplaySpec:
         if not self.supports_source(source):
             raise ValueError(
                 f"GenericReplayProvider does not support system={source.system!r} cc_id={source.cc_id}"
@@ -48,6 +48,12 @@ class GenericReplayProvider:
         spec = self._specs.get(source.cc_id)
         if spec is None:
             raise SpecUnavailable(f"no valid replay spec is loaded for cc_id={source.cc_id}")
+        return spec
+
+    def search_course(
+        self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str
+    ) -> CourseAvailability:
+        spec = self._spec_for(source)
         values = build_values(spec.inputs, term, course_code)
         result = self._executor.execute(spec, term=term, values=values)
         scope = MappingProxyType({**values, **result.captures})
@@ -65,3 +71,13 @@ class GenericReplayProvider:
                 f"v{spec.version} ({len(result.bodies)} page(s))"
             ),
         )
+
+    def list_subject(
+        self, *, source: CollegeScheduleSource, term: ParsedTerm, subject: str
+    ) -> tuple[ListedCourse, ...]:
+        spec = self._spec_for(source)
+        if spec.listing is None:
+            raise ListingUnsupported(f"replay spec cc_id={spec.cc_id} has no listing block")
+        values = build_values(spec.inputs, term, subject.strip().upper())
+        result = self._executor.execute(listing_view(spec), term=term, values=values)
+        return extract_listing(result.bodies, spec.listing.extract)
