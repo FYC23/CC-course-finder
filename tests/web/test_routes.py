@@ -298,7 +298,7 @@ def test_search_stream_sends_start_then_each_college_then_done(client, monkeypat
     assert start == {"type": "start", "total": 1, "results": []}
     assert (college["type"], college["cc_id"], college["done"], college["total"]) == ("college", 2, 1, 1)
     [row] = college["results"]
-    assert (row["course_code"], row["offered_this_term"]) == ("CS 1", True)
+    assert (row["course_code"], row["offered_this_term"], row["lookup_error"]) == ("CS 1", True, None)
     assert row["sections"][0]["fit"] == "async"
     assert done == {"type": "done", "done": 1, "total": 1}
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.schedule.term import TermNotListedError
+
 from src.schedule.colleague_selfservice import ColleagueSelfServiceProvider
 from src.schedule.models import CollegeScheduleSource
 
@@ -94,7 +96,7 @@ def test_resolve_term_code_matches_description():
 def test_resolve_term_code_missing_raises():
     session = MagicMock(spec=requests.Session)
     session.post.return_value = _resp({"TermFilters": [{"Value": "2026SU", "Description": "Summer 2026"}]})
-    with pytest.raises(ValueError, match="Fall 2026"):
+    with pytest.raises(TermNotListedError, match="Fall 2026"):
         resolve_term_code(session, "https://example.edu", parse_term_label("Fall 2026"), keyword="MATH 1", headers={})
 
 

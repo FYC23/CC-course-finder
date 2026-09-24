@@ -34,6 +34,7 @@
         <option value="all">All statuses</option>
         <option value="offered">Offered</option>
         <option value="not_offered">Not offered</option>
+        <option value="check_failed">Couldn't check</option>
         <option value="articulation_only">Articulation only</option>
       </select>
     </div>
@@ -334,34 +335,40 @@
         .replace(/"/g, '&quot;');
     }
 
-    function availabilityKey(offered) {
-      if (offered === true) return 'offered';
-      if (offered === false) return 'not_offered';
+    // A course's availability: offered, not offered, couldn't check (the college's
+    // schedule lookup failed, see lookup_error), or articulation only (no live schedule).
+    function availabilityKey(course) {
+      if (course.lookup_error) return 'check_failed';
+      if (course.offered_this_term === true) return 'offered';
+      if (course.offered_this_term === false) return 'not_offered';
       return 'articulation_only';
     }
 
-    function availabilityRank(offered) {
-      if (offered === true) return 0;
-      if (offered === false) return 1;
-      return 2;
+    var AVAILABILITY_RANK = { offered: 0, not_offered: 1, check_failed: 2, articulation_only: 3 };
+
+    function availabilityRank(course) {
+      return AVAILABILITY_RANK[availabilityKey(course)];
     }
 
-    function offeredBadgeEl(offered) {
+    function makeBadge(colorClass, text) {
       var span = document.createElement('span');
-      span.className = 'badge';
-      if (offered === null) {
-        span.classList.add('badge-gray');
-        span.textContent = 'Articulation only';
-        return span;
-      }
-      if (offered) {
-        span.classList.add('badge-green');
-        span.textContent = 'Offered';
-        return span;
-      }
-      span.classList.add('badge-red');
-      span.textContent = 'Not offered';
+      span.className = 'badge ' + colorClass;
+      span.textContent = text;
       return span;
+    }
+
+    function offeredBadgeEl(course) {
+      var key = availabilityKey(course);
+      if (key === 'offered') return makeBadge('badge-green', 'Offered');
+      if (key === 'not_offered') return makeBadge('badge-red', 'Not offered');
+      if (key === 'articulation_only') return makeBadge('badge-gray', 'Articulation only');
+      var wrap = document.createElement('div');
+      wrap.appendChild(makeBadge('badge-amber', "Couldn't check"));
+      var reason = document.createElement('small');
+      reason.className = 'lookup-reason';
+      reason.textContent = course.lookup_error;
+      wrap.appendChild(reason);
+      return wrap;
     }
 
     var COMMON_TIMEZONES = [
@@ -541,7 +548,7 @@
       var filtered = [];
       for (var i = 0; i < results.length; i++) {
         var item = results[i];
-        if ((statusEl.value === 'all' || availabilityKey(item.offered_this_term) === statusEl.value)
+        if ((statusEl.value === 'all' || availabilityKey(item) === statusEl.value)
             && coursePassesSectionFilters(item)) {
           filtered.push(item);
         }
@@ -575,7 +582,7 @@
         var requirementName = requirementNames[reqIdx];
         var courses = grouped[requirementName];
         courses.sort(function(a, b) {
-          var rankDiff = availabilityRank(a.offered_this_term) - availabilityRank(b.offered_this_term);
+          var rankDiff = availabilityRank(a) - availabilityRank(b);
           if (rankDiff !== 0) return rankDiff;
           var ccDiff = a.cc_name.localeCompare(b.cc_name);
           if (ccDiff !== 0) return ccDiff;
@@ -658,7 +665,7 @@
           tr.appendChild(equivalentTd);
 
           var offeredTd = document.createElement('td');
-          offeredTd.appendChild(offeredBadgeEl(courseRow.offered_this_term));
+          offeredTd.appendChild(offeredBadgeEl(courseRow));
           tr.appendChild(offeredTd);
 
           var sectionsTd = document.createElement('td');

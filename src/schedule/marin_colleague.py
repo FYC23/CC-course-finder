@@ -13,7 +13,7 @@ from .colleague import (
     parse_requested_course,
 )
 from .models import CollegeScheduleSource, CourseAvailability, ParsedSection
-from .term import ParsedTerm
+from .term import ParsedTerm, TermNotListedError
 
 _TERM_OPTION_RE = re.compile(
     r'<option[^>]*value="([0-9]+)"[^>]*>\s*(Spring|Summer|Fall)\s+([0-9]{4})\s*</option>',
@@ -71,7 +71,7 @@ def _resolve_term_code(html: str, term: ParsedTerm) -> str:
         option_label = f"{season.lower()} {year}"
         if option_label == label:
             return code
-    raise ValueError(f"Unable to resolve Marin term code for {term.label!r}")
+    raise TermNotListedError(f"Unable to resolve Marin term code for {term.label!r}")
 
 
 def _parse_sections(html: str, *, requested_subject_number: str) -> list[ParsedSection]:

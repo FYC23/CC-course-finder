@@ -134,8 +134,9 @@ Results UX notes:
 
 - Results stream in college by college, with a progress bar ("12 of 41 colleges done"). Colleges are checked in parallel, so a full search takes under a minute rather than tens of minutes. A college whose server refuses the connection is skipped for the rest of that search.
 - Grouped by UC requirement.
-- Sorted within each group by availability: Offered → Not offered → Articulation only.
+- Sorted within each group by availability: Offered → Not offered → Couldn't check → Articulation only.
 - Availability filter lets you show only one status.
+  - "Couldn't check" means the college's schedule site could not be read this time (server down or erroring, or the term isn't listed there); the row says why. It is not the same as "Not offered".
   - "Articulation only" means the course is articulated in ASSIST, but this term's schedule availability wasn't found for that CC/course.
 - Sections show meeting days, campus-local times, seats used/total, and a Fit badge computed for the timezone you pick (the page preselects your browser's timezone; choose "Don't check hours" to turn fit off). Daylight saving is applied on both the campus side and your side for each term date. Fit is `Fits`, `Conflicts`, `Async` (no set times, online), or `Unknown`.
 - Modality and Hours filters keep a course when at least one of its sections matches.

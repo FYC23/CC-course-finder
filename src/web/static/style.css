@@ -170,6 +170,14 @@ tr:hover td {
 .badge-red   { background: #fee2e2; color: #991b1b; }
 .badge-gray  { background: #f3f4f6; color: #6b7280; }
 .badge-blue  { background: #dbeafe; color: #1e40af; }
+.badge-amber { background: #fef3c7; color: #92400e; }
+
+.lookup-reason {
+  display: block;
+  margin-top: 0.25rem;
+  color: #92400e;
+  max-width: 14rem;
+}
 
 #ingest-bar {
   display: flex;

@@ -15,7 +15,7 @@ import requests
 from .catalog import get_college_source
 from .models import CollegeScheduleSource, CourseAvailability
 from .providers import ScheduleProvider
-from .term import ParsedTerm, parse_term_label
+from .term import ParsedTerm, TermNotListedError, parse_term_label
 
 logger = logging.getLogger(__name__)
 
@@ -244,4 +244,18 @@ def _failed(
         sections=[],
         source_url=source.base_url,
         raw_summary=summary,
+        lookup_error=_lookup_error_reason(err, term),
     )
+
+
+def _lookup_error_reason(err: Exception, term: ParsedTerm) -> str:
+    """A student-facing reason the course could not be checked (no internals leaked)."""
+    if isinstance(err, requests.ConnectionError):
+        return "Couldn't reach the college's schedule server."
+    if isinstance(err, requests.Timeout):
+        return "The college's schedule server took too long to answer."
+    if isinstance(err, requests.HTTPError):
+        return "The college's schedule server returned an error."
+    if isinstance(err, TermNotListedError):
+        return f"{term.label} isn't listed on the college's schedule site."
+    return "Something went wrong reading the college's schedule."

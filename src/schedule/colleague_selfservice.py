@@ -9,7 +9,7 @@ import requests
 
 from .colleague_sections import parse_section
 from .models import CollegeScheduleSource, CourseAvailability, ParsedSection
-from .term import ParsedTerm, term_match_rank
+from .term import ParsedTerm, TermNotListedError, term_match_rank
 
 _COURSE_CODE_RE = re.compile(r"^\s*([A-Za-z]+)\s*[- ]?\s*([0-9]+[A-Za-z]?)\s*$")
 _NUM_SUFFIX_RE = re.compile(r"^([0-9]+)([A-Za-z]?)$")
@@ -87,7 +87,9 @@ def resolve_term_code(
             best = (rank, str(entry["Value"]))
     if best is not None:
         return best[1]
-    raise ValueError(f"Term {term.label!r} not found in Colleague TermFilters at {base_root}")
+    raise TermNotListedError(
+        f"Term {term.label!r} not found in Colleague TermFilters at {base_root}"
+    )
 
 
 @dataclass(frozen=True)

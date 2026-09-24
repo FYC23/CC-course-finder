@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.schedule.term import TermNotListedError
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -74,7 +76,7 @@ def test_resolve_term_code_found():
 
 def test_resolve_term_code_missing():
     term = parse_term_label("Fall 2026")
-    with pytest.raises(ValueError, match="Fall 2026"):
+    with pytest.raises(TermNotListedError, match="Fall 2026"):
         _resolve_term_code(_LANDING_HTML, term)
 
 

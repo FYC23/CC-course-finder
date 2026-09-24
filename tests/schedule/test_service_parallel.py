@@ -5,12 +5,14 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 import requests
 
 from src.assist.models import ArticulationRow, IngestRun
 from src.assist.store import ensure_db, save_rows, save_run
 from src.schedule.models import CourseAvailability
 from src.schedule.service import ScheduleService
+from src.schedule.term import TermNotListedError
 
 SCHOOL = "University of California, Los Angeles"
 MAJOR = "Computer Science"
@@ -201,3 +203,46 @@ def test_shared_provider_instance_runs_one_college_at_a_time(tmp_path: Path) -> 
         target_school=SCHOOL, target_major=MAJOR, term_label="Summer 2026")
 
     assert in_flight["max"] == 1
+
+
+
+@pytest.mark.parametrize("error,reason", [
+    (requests.ConnectionError("refused"), "Couldn't reach the college's schedule server."),
+    (requests.ConnectTimeout("slow connect"), "Couldn't reach the college's schedule server."),
+    (requests.ReadTimeout("slow"), "The college's schedule server took too long to answer."),
+    (requests.HTTPError("500 Server Error"), "The college's schedule server returned an error."),
+    (TermNotListedError("Term 'Summer 2026' not found"), "Summer 2026 isn't listed on the college's schedule site."),
+    (AttributeError("'NoneType' object has no attribute 'get'"), "Something went wrong reading the college's schedule."),
+])
+def test_failed_lookup_says_why_it_could_not_check(tmp_path: Path, error, reason) -> None:
+    db = tmp_path / "a.sqlite3"
+    _seed(db, {EVC: ["MATH 1"]})
+
+    def on_search(*_):
+        raise error
+
+    [out] = _query(_service(db, on_search))
+
+    assert out.lookup_error == reason
+    assert out.offered is False
+
+
+def test_skipped_courses_say_the_college_could_not_be_reached(tmp_path: Path) -> None:
+    db = tmp_path / "a.sqlite3"
+    _seed(db, {EVC: ["MATH 1", "MATH 2"]})
+
+    def on_search(*_):
+        raise requests.ConnectionError("refused")
+
+    out = _query(_service(db, on_search))
+
+    assert [a.lookup_error for a in out] == ["Couldn't reach the college's schedule server."] * 2
+
+
+def test_successful_lookup_has_no_lookup_error(tmp_path: Path) -> None:
+    db = tmp_path / "a.sqlite3"
+    _seed(db, {EVC: ["MATH 1"]})
+
+    [out] = _query(_service(db, lambda *_: None))
+
+    assert out.lookup_error is None

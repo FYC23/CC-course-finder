@@ -6,6 +6,11 @@ import re
 _TERM_LABEL_RE = re.compile(r"^(Spring|Summer|Fall) ([0-9]{4})$")
 
 
+class TermNotListedError(ValueError):
+    """The college's schedule site does not list the requested term (not published yet,
+    or already taken down), so its courses cannot be checked."""
+
+
 @dataclass(frozen=True)
 class ParsedTerm:
     label: str

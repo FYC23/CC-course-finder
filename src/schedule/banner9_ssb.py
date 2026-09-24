@@ -7,7 +7,7 @@ import requests
 
 from .models import CollegeScheduleSource, CourseAvailability, Meeting, ParsedSection
 from .normalize import days_from_flags, int_or_none, normalize_modality, parse_date, parse_hhmm
-from .term import ParsedTerm, term_match_rank
+from .term import ParsedTerm, TermNotListedError, term_match_rank
 
 _PAGE_SIZE = 100
 _COURSE_CODE_RE = re.compile(r"^\s*([A-Za-z]+)\s*[- ]?\s*([A-Za-z0-9]+)\s*$")
@@ -41,7 +41,7 @@ def _resolve_term_code(session: requests.Session, base: str, term: ParsedTerm) -
             best = (rank, str(entry["code"]))
     if best is not None:
         return best[1]
-    raise ValueError(f"Term {term.label!r} not found in SSB term list at {base}")
+    raise TermNotListedError(f"Term {term.label!r} not found in SSB term list at {base}")
 
 
 def _parse_course_code(course_code: str) -> tuple[str, str] | None:

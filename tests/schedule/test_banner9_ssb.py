@@ -1,6 +1,8 @@
 """Tests for Banner9SsbProvider."""
 from __future__ import annotations
 
+from src.schedule.term import TermNotListedError
+
 from unittest.mock import MagicMock
 import pytest
 import requests
@@ -113,7 +115,7 @@ def test_resolve_term_code_not_found():
     s = MagicMock(spec=requests.Session)
     s.get.return_value = _make_resp(_TERMS)
     term = parse_term_label("Spring 2099")
-    with pytest.raises(ValueError, match="Spring 2099"):
+    with pytest.raises(TermNotListedError, match="Spring 2099"):
         _resolve_term_code(s, "https://prodrg.mtsac.edu", term)
 
 

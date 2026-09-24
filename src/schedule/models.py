@@ -68,3 +68,6 @@ class CourseAvailability:
     sections: list[ParsedSection]
     source_url: str
     raw_summary: str = ""
+    # Set when the college's schedule could not be checked; says why, in plain words.
+    # ``offered`` is then False only because nothing was found, not because it isn't offered.
+    lookup_error: str | None = None
