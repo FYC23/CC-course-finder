@@ -93,6 +93,54 @@ def _cc_block_line(lines: list[str], arrow: int) -> str:
     return ""
 
 
+def _cc_title(lines: list[str], course: int) -> str:
+    """The title printed under a CC course line: "- Title (4.00)", sometimes wrapped onto
+    the next lines before the units. Empty when there is no title block.
+
+    A "---" separator line must never be mistaken for the start of a title block, so the
+    first line must start with "-" but not with the "--" that opens a separator.
+    """
+    start = course + 1
+    if start >= len(lines) or not lines[start].startswith("-") or lines[start].startswith("--"):
+        return ""
+    parts: list[str] = []
+    for index in range(start, min(start + _MAX_TITLE_LINES, len(lines))):
+        parts.append(" ".join(lines[index].replace(_ZWSP, " ").split()))
+        if _UNITS_SUFFIX.search(lines[index]):
+            break
+    else:
+        return ""
+    text = " ".join(parts).removeprefix("-").strip()
+    return _UNITS_SUFFIX.sub("", text).strip()
+
+
+def _inline_candidates(lines: list[str]) -> list[tuple[str, str, str]]:
+    """Lines with a left-right arrow marker or course-pair separator; inline layouts carry
+    no title. Keeps the old precedence: the first separator found in each line wins."""
+    candidates: list[tuple[str, str, str]] = []
+    for line in lines:
+        for separator in ("←", "→", "->", "=="):
+            if separator in line:
+                left, right = line.split(separator, 1)
+                candidates.append((left.strip(), right.strip(), ""))
+                break
+    return candidates
+
+
+def _lone_arrow_candidates(lines: list[str]) -> list[tuple[str, str, str]]:
+    """Newer ASSIST PDFs place the arrow on its own line between the UC block and the CC
+    block; the CC title, if any, follows the CC course line."""
+    candidates: list[tuple[str, str, str]] = []
+    for i, line in enumerate(lines):
+        if line != "←":
+            continue
+        left_line = _uc_block_line(lines, i)
+        right_line = _cc_block_line(lines, i)
+        if left_line and right_line:
+            candidates.append((left_line, right_line, _cc_title(lines, i + 1)))
+    return candidates
+
+
 def parse_articulation_rows(ref: AgreementRef, raw_text: str) -> list[ArticulationRow]:
     """Best-effort parser for early v1.
 
@@ -102,32 +150,10 @@ def parse_articulation_rows(ref: AgreementRef, raw_text: str) -> list[Articulati
     rows: list[ArticulationRow] = []
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
 
-    # Heuristic: look for lines with a left-right arrow marker or course-pair separators.
-    candidate_pairs: list[tuple[str, str]] = []
-    for line in lines:
-        if "←" in line:
-            left, right = line.split("←", 1)
-            candidate_pairs.append((left.strip(), right.strip()))
-        elif "→" in line:
-            left, right = line.split("→", 1)
-            candidate_pairs.append((left.strip(), right.strip()))
-        elif "->" in line:
-            left, right = line.split("->", 1)
-            candidate_pairs.append((left.strip(), right.strip()))
-        elif "==" in line:
-            left, right = line.split("==", 1)
-            candidate_pairs.append((left.strip(), right.strip()))
+    # Each candidate is (UC side, CC side, CC title); inline layouts carry no title.
+    candidate_pairs = _inline_candidates(lines) + _lone_arrow_candidates(lines)
 
-    # Newer ASSIST PDFs place the arrow on its own line between the UC block and the CC block.
-    for i, line in enumerate(lines):
-        if line != "←":
-            continue
-        left_line = _uc_block_line(lines, i)
-        right_line = _cc_block_line(lines, i)
-        if left_line and right_line:
-            candidate_pairs.append((left_line, right_line))
-
-    for left, right in candidate_pairs:
+    for left, right, title in candidate_pairs:
         source_line = f"{left} -> {right}"
         cc_course = _normalize_cc_course(right)
         uc_course = _normalize_uc_course(left)
@@ -143,7 +169,7 @@ def parse_articulation_rows(ref: AgreementRef, raw_text: str) -> list[Articulati
                 cc_name=ref.cc_name,
                 cc_id=ref.cc_id,
                 course_code=cc_course,
-                course_title="",
+                course_title=title,
                 agreement_id=ref.agreement_id,
                 academic_year=ref.academic_year_label or str(ref.academic_year_id),
                 source_url=ref.artifact_url,
