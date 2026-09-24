@@ -39,6 +39,7 @@ import pytest  # noqa: E402
 import requests  # noqa: E402
 
 from src.schedule.colleague_selfservice import (  # noqa: E402
+    _parse_requested_course_identity,
     extract_request_token,
     format_term_code,
     resolve_term_code,
@@ -332,3 +333,19 @@ def test_does_not_stop_early_when_catalog_page_is_full():
     ColleagueSelfServiceProvider(session=session).search_course(
         source=_MISS_SOURCE, term=parse_term_label("Summer 2026"), course_code="MATH 070")
     assert len(_catalog_posts(session)) == 3
+
+
+def test_requested_identity_accepts_multi_word_subject() -> None:
+    """ASSIST prints some departments as several words (El Camino "COMP SCI 1").
+
+    Without an identity every catalog row counts as a match, so a multi-word code must
+    parse, or any section the keyword search returns would read as "Offered".
+    """
+    assert _parse_requested_course_identity("COMP SCI 1") == ("COMPSCI", "1")
+    assert _parse_requested_course_identity("C S 2A") == ("CS", "2A")
+
+
+def test_requested_identity_keeps_letter_prefixed_numbers() -> None:
+    assert _parse_requested_course_identity("CS V13") == ("CS", "V13")
+    assert _parse_requested_course_identity("MATH C285") == ("MATH", "C285")
+    assert _parse_requested_course_identity("MATH-1A") == ("MATH", "1A")

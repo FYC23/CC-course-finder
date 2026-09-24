@@ -13,7 +13,8 @@ from .term import ParsedTerm, TermNotListedError, term_match_rank
 
 _COURSE_CODE_RE = re.compile(r"^\s*([A-Za-z]+)\s*[- ]?\s*([0-9]+[A-Za-z]?)\s*$")
 _NUM_SUFFIX_RE = re.compile(r"^([0-9]+)([A-Za-z]?)$")
-_GENERAL_COURSE_CODE_RE = re.compile(r"^\s*([A-Za-z]+)\s*[- ]?\s*([A-Za-z0-9]+)\s*$")
+# The subject may be several words ("COMP SCI 1"); the lazy repeat keeps "CS V13" as CS + V13.
+_GENERAL_COURSE_CODE_RE = re.compile(r"^\s*([A-Za-z]+(?:\s+[A-Za-z]+)*?)\s*[- ]?\s*([A-Za-z0-9]+)\s*$")
 _PAGE_SIZE = 100
 _MAX_KEYWORD_VARIANTS = 5
 _MAX_SECTION_PAGES = 4
