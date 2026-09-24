@@ -189,6 +189,8 @@ class ScheduleService:
                 break
             attempts: list[Attempt] = []
             for live in college.lookups_for(course_code):
+                if cancelled.is_set():
+                    break
                 if unreachable is not None:
                     attempts.append(Attempt(live, error=unreachable, skipped=True))
                     continue
@@ -198,9 +200,12 @@ class ScheduleService:
                     # wait out the same failure.
                     unreachable = attempt.error
                 attempts.append(attempt)
-            results.append(
-                merge_attempts(source=source, term=term, course_code=course_code, attempts=attempts)
-            )
+            # Cancelled before this course's first attempt ran: nothing to merge, so it
+            # is left out of the results rather than reported on the strength of no data.
+            if attempts:
+                results.append(
+                    merge_attempts(source=source, term=term, course_code=course_code, attempts=attempts)
+                )
         return CollegeResult(cc_id=source.cc_id, availabilities=tuple(results))
 
     def _attempt(
