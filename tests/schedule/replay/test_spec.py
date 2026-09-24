@@ -221,3 +221,12 @@ def test_step_url_placeholder_in_path_loads(tmp_path: Path):
 def test_step_url_with_port_and_no_path_loads(tmp_path: Path):
     steps = [{"id": "s", "method": "GET", "url": "https://example.edu:8443"}]
     assert load_spec(_write(tmp_path, _variant(steps=steps))).steps[0].url == "https://example.edu:8443"
+
+
+def test_modality_map_value_must_be_a_known_modality(tmp_path: Path):
+    extract = {
+        "kind": "json", "rows": "$.d[*]", "fields": {"section_id": "$.crn"},
+        "modality": {"tokens": ["$.mode"], "map": {"Partially Online": "hybird"}},
+    }
+    with pytest.raises(SpecInvalid, match="hybird"):
+        load_spec(_write(tmp_path, _variant(extract=extract)))

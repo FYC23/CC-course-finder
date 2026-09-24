@@ -134,12 +134,12 @@ def test_http_error_propagates_without_retry(tmp_path):
     assert len(session.calls) == 1
 
 
-def _paged_spec(tmp_path, total_text: str, max_pages: int = 10):
+def _paged_spec(tmp_path, total_text: str, max_pages: int = 10, page_size: int = 20):
     return _spec(tmp_path, [{
         "id": "search", "method": "GET", "url": "https://example.edu/search",
         "query": {"q": "{subject}", "offset": "0"},
         "captures": {"total": {"css": "#total"}},
-        "paginate": {"param": "offset", "first": 0, "increment": 1, "page_size": 20,
+        "paginate": {"param": "offset", "first": 0, "increment": 1, "page_size": page_size,
                      "max_pages": max_pages, "total_capture": "total"},
     }]), f"<div><span id='total'>{total_text}</span></div>"
 
@@ -212,3 +212,22 @@ def test_non_https_hop_in_an_earlier_step_is_portal_changed(tmp_path):
     with pytest.raises(PortalChanged, match="'boot'"):
         _run(_executor(session), spec)
     assert len(session.calls) == 1
+
+
+def test_paginate_total_with_thousands_separator(tmp_path):
+    spec, page = _paged_spec(tmp_path, "1,234", max_pages=50, page_size=100)
+    session = FakeSession({"https://example.edu/search": page})
+    assert len(_run(_executor(session), spec).bodies) == 13  # ceil(1234 / 100)
+
+
+def test_paginate_total_with_thousands_separator_is_capped(tmp_path):
+    spec, page = _paged_spec(tmp_path, "1,234", max_pages=4)
+    session = FakeSession({"https://example.edu/search": page})
+    assert len(_run(_executor(session), spec).bodies) == 4
+
+
+def test_paginate_superscript_digit_total_is_portal_changed(tmp_path):
+    spec, page = _paged_spec(tmp_path, "²")
+    session = FakeSession({"https://example.edu/search": page})
+    with pytest.raises(PortalChanged, match="total"):
+        _run(_executor(session), spec)

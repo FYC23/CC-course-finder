@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -108,11 +109,12 @@ class ReplayExecutor:
         if paginate is None:
             return ()
         total_text = captures.get(paginate.total_capture, "")
-        if not total_text.strip().isdigit():
+        total = re.fullmatch(r"\d+", total_text.strip().replace(",", ""), flags=re.ASCII)
+        if total is None:
             raise PortalChanged(
                 f"step {step.id!r}: pagination total {total_text!r} is not a number"
             )
-        pages = min(math.ceil(int(total_text) / paginate.page_size), paginate.max_pages)
+        pages = min(math.ceil(int(total.group()) / paginate.page_size), paginate.max_pages)
         bodies: list[str] = []
         for page in range(1, pages):
             value = str(paginate.first + page * paginate.increment)
