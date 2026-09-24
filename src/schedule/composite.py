@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .colleague_selfservice import ColleagueSelfServiceProvider
 from .banner9_ssb import Banner9SsbProvider
+from .generic_replay import GenericReplayProvider
 from .marin_colleague import MarinColleagueProvider
 from .models import CollegeScheduleSource, CourseAvailability
 from .providers import ScheduleProvider
@@ -35,4 +36,5 @@ def build_composite_provider() -> CompositeProvider:
         Vsb4cdProvider(),
         MarinColleagueProvider(),
         SmcccdColleagueProvider(),
+        GenericReplayProvider(),
     ])

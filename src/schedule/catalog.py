@@ -16,6 +16,7 @@ KNOWN_SYSTEMS: frozenset[str] = frozenset(
         "vsb_4cd",
         "marin_colleague",
         "smcccd_colleague",
+        "replay",
     }
 )
 # Legacy names still accepted on disk and mapped to their real family.

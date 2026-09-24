@@ -242,3 +242,7 @@ def test_list_college_sources_returns_all(tmp_path: Path):
     data = [{**_VALID_ENTRY, "cc_id": 1, "cc_name": "A"}, {**_VALID_ENTRY, "cc_id": 2, "cc_name": "B"}]
     _reload(_write_json(tmp_path, data))
     assert [s.cc_id for s in list_college_sources()] == [1, 2]
+
+
+def test_replay_system_is_known():
+    _validate_entry({**_VALID_ENTRY, "system": "replay", "locations": []})  # must not raise

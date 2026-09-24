@@ -246,3 +246,14 @@ def test_successful_lookup_has_no_lookup_error(tmp_path: Path) -> None:
     [out] = _query(_service(db, lambda *_: None))
 
     assert out.lookup_error is None
+
+
+from src.schedule.errors import PortalChanged  # noqa: E402
+from src.schedule.service import _lookup_error_reason  # noqa: E402
+from src.schedule.term import parse_term_label as _parse_term  # noqa: E402
+
+
+def test_portal_changed_has_a_student_facing_reason() -> None:
+    reason = _lookup_error_reason(PortalChanged("rows path not found"), _parse_term("Fall 2026"))
+    assert reason == "The college's schedule site changed; this lookup needs to be re-recorded."
+    assert "rows path" not in reason
