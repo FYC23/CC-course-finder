@@ -87,6 +87,10 @@
     </div>
   </details>
 
+  <div id="search-progress" role="status" aria-live="polite">
+    <progress id="search-progress-bar" max="1" value="0"></progress>
+    <span id="search-progress-text"></span>
+  </div>
   <div id="results-count"></div>
   <div id="results-container"></div>
 
@@ -103,6 +107,9 @@
     const toast = document.getElementById('error-toast');
     const countEl = document.getElementById('results-count');
     const container = document.getElementById('results-container');
+    const progressEl = document.getElementById('search-progress');
+    const progressBar = document.getElementById('search-progress-bar');
+    const progressText = document.getElementById('search-progress-text');
     const ingestBar = document.getElementById('ingest-bar');
     const ingestOptionsEl = document.getElementById('ingest-options');
     const stalenessBadgeEl = document.getElementById('staleness-badge');
@@ -111,6 +118,7 @@
     const maxCcEl = document.getElementById('max-cc');
     const allowNonNumericEl = document.getElementById('allow-non-numeric-keys');
     var lastResults = [];
+    var searchInProgress = false;
     var activeJobId = null;
     var pollTimer = null;
     var rowsExistForSelection = false;
@@ -517,12 +525,18 @@
     }
 
     function renderResults(results) {
+      var openKeys = {};
+      container.querySelectorAll('details[open][data-key]').forEach(function(d) {
+        openKeys[d.dataset.key] = true;
+      });
       container.replaceChildren();
       if (!results.length) {
         countEl.textContent = '';
-        container.appendChild(makeInfoMessage('No results found.'));
+        container.appendChild(makeInfoMessage(
+          searchInProgress ? 'Waiting for the first colleges to answer…' : 'No results found.'));
         return;
       }
+      var soFar = searchInProgress ? ' so far' : '';
 
       var filtered = [];
       for (var i = 0; i < results.length; i++) {
@@ -534,12 +548,12 @@
       }
 
       if (!filtered.length) {
-        countEl.textContent = 'Showing 0 of ' + results.length + ' course(s)';
+        countEl.textContent = 'Showing 0 of ' + results.length + ' course(s)' + soFar;
         container.appendChild(makeInfoMessage('No matches for current filters.'));
         return;
       }
 
-      countEl.textContent = 'Showing ' + filtered.length + ' of ' + results.length + ' course(s)';
+      countEl.textContent = 'Showing ' + filtered.length + ' of ' + results.length + ' course(s)' + soFar;
 
       var grouped = {};
       for (var j = 0; j < filtered.length; j++) {
@@ -648,7 +662,13 @@
           tr.appendChild(offeredTd);
 
           var sectionsTd = document.createElement('td');
-          sectionsTd.appendChild(renderSectionsEl(courseRow.sections));
+          var sectionsEl = renderSectionsEl(courseRow.sections);
+          if (sectionsEl.nodeType === Node.ELEMENT_NODE) {
+            var sectionsKey = requirementName + '|' + courseRow.cc_id + '|' + courseRow.course_code;
+            sectionsEl.dataset.key = sectionsKey;
+            sectionsEl.open = !!openKeys[sectionsKey];
+          }
+          sectionsTd.appendChild(sectionsEl);
           tr.appendChild(sectionsTd);
 
           tbody.appendChild(tr);
@@ -690,36 +710,108 @@
     modalityEl.addEventListener('change', function() { renderResults(lastResults); });
     fitEl.addEventListener('change', function() { renderResults(lastResults); });
 
+    function showProgress(done, total, message) {
+      progressEl.style.display = 'flex';
+      progressBar.max = Math.max(total, 1);
+      progressBar.value = total ? done : 1;
+      progressText.textContent = message;
+    }
+
+    function readNdjson(res, onEvent) {
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+      function emitLines(text) {
+        text.split('\n').forEach(function(line) {
+          if (line.trim()) onEvent(JSON.parse(line));
+        });
+      }
+      function pump() {
+        return reader.read().then(function(chunk) {
+          if (chunk.done) {
+            emitLines(buffer + decoder.decode());
+            return;
+          }
+          buffer += decoder.decode(chunk.value, { stream: true });
+          var cut = buffer.lastIndexOf('\n');
+          if (cut >= 0) {
+            emitLines(buffer.slice(0, cut));
+            buffer = buffer.slice(cut + 1);
+          }
+          return pump();
+        });
+      }
+      return pump();
+    }
+
+    function streamSearch(params) {
+      var total = 0;
+      var done = 0;
+      var finished = false;
+      function onEvent(ev) {
+        if (ev.type === 'start') {
+          total = ev.total;
+          lastResults = ev.results;
+          showProgress(0, total, total
+            ? 'Checking class schedules: 0 of ' + total + ' colleges done'
+            : 'No live class schedules to check');
+        } else if (ev.type === 'college') {
+          done = ev.done;
+          lastResults = lastResults.concat(ev.results);
+          showProgress(done, total, 'Checking class schedules: ' + done + ' of ' + total + ' colleges done');
+        } else if (ev.type === 'done') {
+          finished = true;
+          searchInProgress = false;
+          showProgress(total, total, 'Checked ' + total + ' college schedule(s)');
+        } else if (ev.type === 'error') {
+          finished = true;
+          searchInProgress = false;
+          showProgress(done, total, 'Stopped after ' + done + ' of ' + total + ' colleges');
+          showError('Search stopped partway: ' + ev.detail + ' Results so far are shown.');
+        }
+        renderResults(lastResults);
+      }
+      return fetch('/api/search/stream?' + params).then(function(res) {
+        if (!res.ok) {
+          return res.json().catch(function() { return {}; }).then(function(body) {
+            if (res.status === 409) {
+              throw new Error(body.detail || 'Run ASSIST ingest first.');
+            }
+            throw new Error(body.detail || 'HTTP ' + res.status);
+          });
+        }
+        return readNdjson(res, onEvent).then(function() {
+          if (!finished) {
+            throw new Error('the connection closed after ' + done + ' of ' + total +
+              ' colleges. Results so far are shown.');
+          }
+        });
+      });
+    }
+
     searchBtn.addEventListener('click', function() {
       clearError();
       searchBtn.disabled = true;
       searchBtn.textContent = 'Searching…';
-      container.innerHTML = '';
+      container.replaceChildren();
       countEl.textContent = '';
       lastResults = [];
+      searchInProgress = true;
+      showProgress(0, 1, 'Starting search…');
+      progressBar.value = 0;
       var params = 'school=' + encodeURIComponent(schoolEl.value) +
         '&major=' + encodeURIComponent(majorEl.value) +
         '&term=' + encodeURIComponent(termEl.value.trim());
       if (reqEl.value.trim()) params += '&requirement=' + encodeURIComponent(reqEl.value.trim());
       if (timezoneEl.value) params += '&tz=' + encodeURIComponent(timezoneEl.value);
-      fetch('/api/search?' + params)
-        .then(function(res) {
-          if (!res.ok) {
-            return res.json().catch(function() { return {}; }).then(function(body) {
-              if (res.status === 409) {
-                throw new Error(body.detail || 'Run ASSIST ingest first.');
-              }
-              throw new Error(body.detail || 'HTTP ' + res.status);
-            });
-          }
-          return res.json();
+      streamSearch(params)
+        .catch(function(e) {
+          showError('Search failed: ' + e.message);
+          if (!lastResults.length) progressEl.style.display = 'none';
         })
-        .then(function(data) {
-          lastResults = data;
-          renderResults(lastResults);
-        })
-        .catch(function(e) { showError('Search failed: ' + e.message); })
         .finally(function() {
+          searchInProgress = false;
+          renderResults(lastResults);
           searchBtn.disabled = false;
           searchBtn.textContent = 'Search';
           updateSearchBtn();

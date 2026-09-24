@@ -54,7 +54,7 @@ Queries live CC schedule systems to check if articulated courses are offered in 
 - `providers.py` — `ScheduleProvider` protocol: `supports_source(source)` + `search_course(source, dept, number, term)`
 - `composite.py` — `CompositeProvider` dispatches to the right scraper by system type
 - `catalog.py` — loads `colleges.json` mapping CC IDs → `CollegeScheduleSource`
-- `service.py` — `ScheduleService`: queries ASSIST DB then calls schedule providers
+- `service.py` — `ScheduleService`: `plan()` picks colleges/courses from the ASSIST DB, `iter_results()` looks colleges up in parallel (one provider + HTTP session per college via `provider_factory`, one college's courses in order, at most 3 lookups per server) and yields each college as it finishes
 - `term.py` — parses term labels like `"Summer 2026"` into provider-specific formats
 
 **Scrapers** (each implements `ScheduleProvider`):
@@ -71,7 +71,7 @@ FastAPI app serving a search UI.
 
 - `app.py` — mounts static files, templates, CORS middleware
 - `routers/schools.py` — `GET /api/schools`, `GET /api/majors`
-- `routers/search.py` — `GET /api/search` (joins ASSIST + schedule data)
+- `routers/search.py` — `GET /api/search` (one-shot JSON) and `GET /api/search/stream` (newline-delimited JSON: `start`, one `college` per finished college, `done`/`error`; the page uses this)
 - `join.py` — `join_results()` merges articulation rows with schedule availability
 - `templates/index.html` — single-page frontend
 

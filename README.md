@@ -132,6 +132,7 @@ Open `http://127.0.0.1:8000` and search by university, major, term, and optional
 
 Results UX notes:
 
+- Results stream in college by college, with a progress bar ("12 of 41 colleges done"). Colleges are checked in parallel, so a full search takes under a minute rather than tens of minutes. A college whose server refuses the connection is skipped for the rest of that search.
 - Grouped by UC requirement.
 - Sorted within each group by availability: Offered → Not offered → Articulation only.
 - Availability filter lets you show only one status.
