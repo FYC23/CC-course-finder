@@ -23,6 +23,10 @@ class SearchResult:
     agreement_id: str
     # Why this term's schedule could not be checked; offered_this_term is then None.
     lookup_error: str | None = None
+    # Set when the course was found under another code this term, e.g. "MATH-C2220".
+    matched_code: str | None = None
+    match_source: str | None = None
+    match_status: str | None = None
 
 
 def join_results(
@@ -44,6 +48,7 @@ def join_results(
 
         avail = sched_index.get((cc_id, course_code))
         lookup_error: str | None = None
+        matched: CourseAvailability | None = None
         if avail is None:
             offered: bool | None = None
             sections: list[ParsedSection] = []
@@ -53,6 +58,7 @@ def join_results(
             offered = None if lookup_error else avail.offered
             sections = avail.sections
             schedule_source_url = avail.source_url
+            matched = avail if avail.matched_code else None
 
         results.append(SearchResult(
             cc_name=first.cc_name,
@@ -68,6 +74,9 @@ def join_results(
             academic_year=first.academic_year,
             agreement_id=first.agreement_id,
             lookup_error=lookup_error,
+            matched_code=matched.matched_code if matched else None,
+            match_source=matched.match_source if matched else None,
+            match_status=matched.match_status if matched else None,
         ))
 
     return results

@@ -179,6 +179,12 @@ tr:hover td {
   max-width: 14rem;
 }
 
+.matched-via {
+  display: block;
+  margin-top: 0.25rem;
+  color: #1e40af;
+}
+
 #ingest-bar {
   display: flex;
   margin-bottom: 1rem;
