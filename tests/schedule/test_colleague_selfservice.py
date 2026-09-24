@@ -249,3 +249,84 @@ def test_bootstrap_isolates_token_across_colleges():
         assert "__RequestVerificationToken" not in call.kwargs.get("headers", {})
 
     assert "__RequestVerificationToken" not in session.headers
+
+
+_MISS_SOURCE = CollegeScheduleSource(
+    cc_id=2, cc_name="Evergreen Valley College", system="colleague_selfservice",
+    base_url="https://selfservice.example.edu", locations=(),
+    params=MappingProxyType({"term_format": "{yyyy}{SEASON2}"}),
+)
+
+
+def _routing_session(catalog_models):
+    """Fake portal: SectionListing finds nothing; CatalogListing returns catalog_models
+    shaped like the live portal (SubjectCode/Number at the top level of each model)."""
+    session = MagicMock(spec=requests.Session)
+    session.headers = {}
+    session.get.return_value = _resp({}, text=_HTML)
+
+    def post(url, json=None, headers=None, timeout=None):
+        if url.endswith("/Sections"):
+            return _resp({"SectionsRetrieved": {"TermsAndSections": []}})
+        if json["searchResultsView"] == "SectionListing":
+            return _resp({"TotalPages": 1, "Sections": []})
+        return _resp({"CourseFullModels": catalog_models})
+
+    session.post.side_effect = post
+    return session
+
+
+def _catalog_model(course_id, subject, number):
+    return {"Id": course_id, "SubjectCode": subject, "Number": number,
+            "MatchingSectionIds": [f"{course_id}-s1"]}
+
+
+def _posted_urls(session):
+    return [call.args[0] for call in session.post.call_args_list]
+
+
+def test_catalog_skips_unrelated_courses_named_at_top_level():
+    """The portal's keyword search is fuzzy: "MATH 070" also lists MATH 020, MATH 021, ...
+    Those must be recognised as other courses and never trigger a Sections request."""
+    session = _routing_session([_catalog_model("c1", "MATH", "020"),
+                                _catalog_model("c2", "MATH", "021")])
+    result = ColleagueSelfServiceProvider(session=session).search_course(
+        source=_MISS_SOURCE, term=parse_term_label("Summer 2026"), course_code="MATH 070")
+    assert result.offered is False
+    assert not [u for u in _posted_urls(session) if u.endswith("/Sections")]
+
+
+def _catalog_posts(session):
+    return [c for c in session.post.call_args_list
+            if not c.args[0].endswith("/Sections") and c.kwargs["json"]["searchResultsView"] == "CatalogListing"]
+
+
+def test_stops_trying_keyword_variants_when_subject_listed_without_the_course():
+    """Clear miss: the portal listed this term's MATH courses and MATH 070 is not among them.
+    Rewording the keyword ("MATH 70", "MATH-70") would return the same list."""
+    session = _routing_session([_catalog_model("c1", "MATH", "020"),
+                                _catalog_model("c2", "MATH", "071")])
+    result = ColleagueSelfServiceProvider(session=session).search_course(
+        source=_MISS_SOURCE, term=parse_term_label("Summer 2026"), course_code="MATH 070")
+    assert result.offered is False
+    assert len(_catalog_posts(session)) == 1
+
+
+@pytest.mark.parametrize("models", [
+    [],
+    [_catalog_model("c1", "ENGL", "001A")],
+])
+def test_keeps_trying_keyword_variants_when_listing_is_not_conclusive(models):
+    session = _routing_session(models)
+    ColleagueSelfServiceProvider(session=session).search_course(
+        source=_MISS_SOURCE, term=parse_term_label("Summer 2026"), course_code="MATH 070")
+    assert len(_catalog_posts(session)) == 3  # MATH 070, MATH 70, MATH-70
+
+
+def test_does_not_stop_early_when_catalog_page_is_full():
+    """A full page may be truncated, so the requested course could be on a later page."""
+    models = [_catalog_model(f"c{i}", "MATH", str(100 + i)) for i in range(100)]
+    session = _routing_session(models)
+    ColleagueSelfServiceProvider(session=session).search_course(
+        source=_MISS_SOURCE, term=parse_term_label("Summer 2026"), course_code="MATH 070")
+    assert len(_catalog_posts(session)) == 3

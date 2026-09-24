@@ -231,6 +231,8 @@ class ColleagueSelfServiceProvider:
                     source_url=catalog_listing.url,
                     raw_summary=_build_raw_summary(catalog_listing.text, stats),
                 )
+            if _is_clear_miss(_safe_json(catalog_listing), requested_identity):
+                break
 
         return _build_availability(
             source=source,
@@ -472,6 +474,29 @@ def _parse_sections_response(
     return out, _MatchStats(matched=len(out), unknown=unknown, dropped_nonmatch=dropped_nonmatch)
 
 
+def _is_clear_miss(
+    catalog_payload: dict[str, object], requested_identity: tuple[str, str] | None
+) -> bool:
+    """True when the catalog listed this term's courses in the requested subject, and the
+    requested course is not among them.
+
+    The keyword search matches on subject, so rewording only the number ("MATH 70" for
+    "MATH 070") returns the same list, and trying more keyword variants cannot turn up the
+    course. An empty or other-subject listing proves nothing, and a full page may be
+    truncated, so neither counts.
+    """
+    if requested_identity is None:
+        return False
+    models = [m for m in catalog_payload.get("CourseFullModels") or [] if isinstance(m, dict)]
+    if len(models) >= _PAGE_SIZE:
+        return False
+    identities = [identity for m in models if (identity := _extract_catalog_identity(m))]
+    same_subject = [i for i in identities if i[0] == requested_identity[0]]
+    return bool(same_subject) and not any(
+        _course_identities_match(requested_identity, i) for i in same_subject
+    )
+
+
 def _first_str(*values: object) -> str | None:
     for value in values:
         if isinstance(value, str) and value.strip():
@@ -588,6 +613,14 @@ def _extract_catalog_identity(raw_row: dict[str, object]) -> tuple[str, str] | N
         identity = _normalize_identity(subject=subject, number=number)
         if identity is not None:
             return identity
+
+    # CatalogListing's CourseFullModels carry the code at the top level, not under "Course".
+    top_level = _normalize_identity(
+        subject=_first_str(raw_row.get("SubjectCode")),
+        number=_first_str(raw_row.get("Number")),
+    )
+    if top_level is not None:
+        return top_level
 
     course_name = _first_str(raw_row.get("CourseName"))
     if course_name is None:
