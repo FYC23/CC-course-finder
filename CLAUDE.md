@@ -96,7 +96,7 @@ FastAPI app serving a search UI.
 
 **Replay specs are data, not code:** a spec is a schema-validated JSON file of at most five HTTP steps plus an extraction block. No loops, conditionals, JavaScript, or login. Pagination is a declared, bounded primitive. At runtime an invalid spec is skipped and logged (that college shows "Couldn't check"; every other college still works); the test suite and `cli validate` fail fast on it. `tests/schedule/replay/test_specs_registry.py` requires every `"system": "replay"` catalog entry to have a spec with the same `cc_id` and name.
 
-**ASSIST re-ingest replaces a college's rows:** schedule queries read every ingest run for a major, so `save_rows` deletes a college's rows from earlier runs once a new run has re-parsed that college's agreement. Colleges a run did not reach keep their rows. After a parser fix, re-run `ingest` (cached PDFs in `data/assist_artifacts/` are reused).
+**ASSIST re-ingest replaces a college's rows:** schedule queries read every ingest run for a major, so `save_rows` deletes a college's rows from earlier runs once a new run has re-parsed that college's agreement into at least one row. Colleges a run did not reach, or that parse to nothing (likely an ASSIST layout change, logged), keep their rows. After a parser fix, re-run `ingest` (cached PDFs in `data/assist_artifacts/` are reused).
 
 **Course-code drift is a Phase 3 problem:** Riverside district specs send ASSIST codes as-is (`MAT-1B`), which no longer match live codes (`MATH-C2220`); those courses show "Not offered" until the alias table lands.
 
