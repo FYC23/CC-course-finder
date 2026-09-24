@@ -60,6 +60,9 @@ def test_term_input_season_missing_is_term_not_listed():
         ("MAT 1B", "course_code", "compact", "MAT1B"),
         ("MAT 1B", "subject", "as_is", "MAT"),
         ("MAT 1B", "number", "as_is", "1B"),
+        ("MAT 1B", "subject", "dash_join", "MAT"),
+        ("MAT 1B", "subject", "compact", "MAT"),
+        ("mat 1b", "number", "upper", "1B"),
     ],
 )
 def test_named_inputs(course_code, source, transform, expected):

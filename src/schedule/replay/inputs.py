@@ -29,23 +29,31 @@ def course_parts(course_code: str) -> tuple[str, str]:
     return match.group(1).upper(), match.group(2).upper()
 
 
-def _as_is(subject: str, number: str, course_code: str) -> str:
-    return course_code
+def _as_is(source_value: str) -> str:
+    return source_value
 
 
-def _upper(subject: str, number: str, course_code: str) -> str:
-    return course_code.upper()
+def _upper(source_value: str) -> str:
+    return source_value.upper()
 
 
-def _dash_join(subject: str, number: str, course_code: str) -> str:
+def _dash_join(source_value: str) -> str:
+    # If no separator present, treat as subject-only (no parsing needed)
+    if ' ' not in source_value and '-' not in source_value:
+        return source_value.upper()
+    subject, number = course_parts(source_value)
     return f"{subject}-{number}" if number else subject
 
 
-def _compact(subject: str, number: str, course_code: str) -> str:
+def _compact(source_value: str) -> str:
+    # If no separator present, treat as subject-only (no parsing needed)
+    if ' ' not in source_value and '-' not in source_value:
+        return source_value.upper()
+    subject, number = course_parts(source_value)
     return f"{subject}{number}"
 
 
-_TRANSFORMS: Mapping[str, Callable[[str, str, str], str]] = MappingProxyType(
+_TRANSFORMS: Mapping[str, Callable[[str], str]] = MappingProxyType(
     {"as_is": _as_is, "upper": _upper, "dash_join": _dash_join, "compact": _compact}
 )
 _SOURCES: Mapping[str, Callable[[str, str, str], str]] = MappingProxyType(
@@ -80,7 +88,7 @@ def build_values(spec_inputs: SpecInputs, term: ParsedTerm, course_code: str) ->
         values["term"] = render(spec_inputs.term.format, {**values, "SEASON": season_code})
     for name, named in spec_inputs.named.items():
         source_value = _SOURCES[named.source](subject, number, code)
-        values[name] = _TRANSFORMS[named.transform](subject, number, source_value)
+        values[name] = _TRANSFORMS[named.transform](source_value)
     return MappingProxyType(values)
 
 
