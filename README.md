@@ -136,7 +136,7 @@ Results UX notes:
 - Sorted within each group by availability: Offered → Not offered → Articulation only.
 - Availability filter lets you show only one status.
   - "Articulation only" means the course is articulated in ASSIST, but this term's schedule availability wasn't found for that CC/course.
-- Sections show meeting days, campus-local times, seats used/total, and a Fit badge computed from your UTC offset (minutes east of UTC; the page defaults it from your browser). Fit is `Fits`, `Conflicts`, `Async` (no set times, online), or `Unknown`.
+- Sections show meeting days, campus-local times, seats used/total, and a Fit badge computed for the timezone you pick (the page preselects your browser's timezone; choose "Don't check hours" to turn fit off). Daylight saving is applied on both the campus side and your side for each term date. Fit is `Fits`, `Conflicts`, `Async` (no set times, online), or `Unknown`.
 - Modality and Hours filters keep a course when at least one of its sections matches.
 
 ### Ingest and query (single-target v1)

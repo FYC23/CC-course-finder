@@ -1,8 +1,9 @@
 """Classify whether a section's meeting times work for a student in another timezone."""
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, time
+from functools import lru_cache
+from zoneinfo import ZoneInfo, available_timezones
 
 from .models import Meeting, ParsedSection
 
@@ -12,12 +13,25 @@ FIT_CONFLICTS = "conflicts"
 FIT_UNKNOWN = "unknown"
 
 
+@lru_cache(maxsize=1)
+def _known_timezones() -> frozenset[str]:
+    return frozenset(available_timezones())
+
+
+def is_known_timezone(name: str) -> bool:
+    """True only for names in the IANA timezone database (e.g. "Asia/Shanghai")."""
+    return name in _known_timezones()
+
+
 def to_student_local(
-    campus_time: time, on_date: date, campus_tz: str, student_utc_offset_minutes: int
+    campus_time: time, on_date: date, campus_tz: str, student_tz: str
 ) -> tuple[time, int]:
-    """Return (student-local time, day shift) for a campus-local clock time on a date."""
+    """Return (student-local time, day shift) for a campus-local clock time on a date.
+
+    Both zones are IANA names, so daylight saving on either side is applied for that date.
+    """
     campus_dt = datetime.combine(on_date, campus_time, tzinfo=ZoneInfo(campus_tz))
-    student_dt = campus_dt.astimezone(timezone(timedelta(minutes=student_utc_offset_minutes)))
+    student_dt = campus_dt.astimezone(ZoneInfo(student_tz))
     day_shift = (student_dt.date() - on_date).days
     return student_dt.time().replace(tzinfo=None), day_shift
 
@@ -28,12 +42,12 @@ def _fits_on_date(
     on_date: date,
     campus_tz: str,
     *,
-    student_utc_offset_minutes: int,
+    student_tz: str,
     window_start_hour: int,
     window_end_hour: int,
 ) -> bool:
-    start, start_shift = to_student_local(start_local, on_date, campus_tz, student_utc_offset_minutes)
-    end, end_shift = to_student_local(end_local, on_date, campus_tz, student_utc_offset_minutes)
+    start, start_shift = to_student_local(start_local, on_date, campus_tz, student_tz)
+    end, end_shift = to_student_local(end_local, on_date, campus_tz, student_tz)
     if start_shift != end_shift:
         return False
     window_start = time(window_start_hour, 0)
@@ -42,7 +56,7 @@ def _fits_on_date(
 
 
 def _meeting_fits(
-    meeting: Meeting, *, student_utc_offset_minutes: int, window_start_hour: int, window_end_hour: int
+    meeting: Meeting, *, student_tz: str, window_start_hour: int, window_end_hour: int
 ) -> bool:
     if meeting.start_local is None or meeting.end_local is None:
         raise ValueError("meeting has no start/end time")
@@ -55,7 +69,7 @@ def _meeting_fits(
             meeting.end_local,
             on_date,
             meeting.timezone,
-            student_utc_offset_minutes=student_utc_offset_minutes,
+            student_tz=student_tz,
             window_start_hour=window_start_hour,
             window_end_hour=window_end_hour,
         )
@@ -66,7 +80,7 @@ def _meeting_fits(
 def classify_fit(
     section: ParsedSection,
     *,
-    student_utc_offset_minutes: int,
+    student_tz: str,
     window_start_hour: int = 8,
     window_end_hour: int = 23,
 ) -> str:
@@ -79,7 +93,7 @@ def classify_fit(
     fits_all = all(
         _meeting_fits(
             m,
-            student_utc_offset_minutes=student_utc_offset_minutes,
+            student_tz=student_tz,
             window_start_hour=window_start_hour,
             window_end_hour=window_end_hour,
         )

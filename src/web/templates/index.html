@@ -48,8 +48,8 @@
       </select>
     </div>
     <div class="form-group">
-      <label for="utc-offset">My UTC offset (minutes)</label>
-      <input type="number" id="utc-offset" step="30" min="-840" max="840" />
+      <label for="timezone">My timezone</label>
+      <select id="timezone"></select>
     </div>
     <div class="form-group">
       <label for="fit-filter">Hours</label>
@@ -98,8 +98,7 @@
     const statusEl = document.getElementById('status-filter');
     const modalityEl = document.getElementById('modality-filter');
     const fitEl = document.getElementById('fit-filter');
-    const utcOffsetEl = document.getElementById('utc-offset');
-    utcOffsetEl.value = String(-new Date().getTimezoneOffset());
+    const timezoneEl = document.getElementById('timezone');
     const searchBtn = document.getElementById('search-btn');
     const toast = document.getElementById('error-toast');
     const countEl = document.getElementById('results-count');
@@ -356,6 +355,83 @@
       span.textContent = 'Not offered';
       return span;
     }
+
+    var COMMON_TIMEZONES = [
+      ['America/Los_Angeles', 'Pacific (California)'],
+      ['America/Denver', 'Mountain'],
+      ['America/Phoenix', 'Arizona'],
+      ['America/Chicago', 'Central'],
+      ['America/New_York', 'Eastern'],
+      ['America/Anchorage', 'Alaska'],
+      ['Pacific/Honolulu', 'Hawaii'],
+      ['America/Mexico_City', 'Mexico City'],
+      ['America/Sao_Paulo', 'Brazil (São Paulo)'],
+      ['Europe/London', 'UK (London)'],
+      ['Europe/Paris', 'Central Europe (Paris, Berlin)'],
+      ['Asia/Dubai', 'Gulf (Dubai)'],
+      ['Asia/Kolkata', 'India'],
+      ['Asia/Bangkok', 'Thailand, Vietnam'],
+      ['Asia/Jakarta', 'Indonesia (Jakarta)'],
+      ['Asia/Shanghai', 'China'],
+      ['Asia/Hong_Kong', 'Hong Kong'],
+      ['Asia/Taipei', 'Taiwan'],
+      ['Asia/Singapore', 'Singapore, Malaysia'],
+      ['Asia/Manila', 'Philippines'],
+      ['Asia/Seoul', 'Korea'],
+      ['Asia/Tokyo', 'Japan'],
+      ['Australia/Sydney', 'Australia (Sydney)'],
+      ['Pacific/Auckland', 'New Zealand']
+    ];
+
+    function utcOffsetLabel(zone) {
+      try {
+        var parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' })
+          .formatToParts(new Date());
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i].type === 'timeZoneName') return parts[i].value.replace('GMT', 'UTC');
+        }
+      } catch (e) { /* older browsers: leave the offset out of the label */ }
+      return '';
+    }
+
+    function addTimezoneOption(parent, zone, name) {
+      var opt = document.createElement('option');
+      var offset = utcOffsetLabel(zone);
+      opt.value = zone;
+      opt.textContent = name + (offset ? ' · ' + offset : '');
+      parent.appendChild(opt);
+    }
+
+    function populateTimezones(select) {
+      var none = document.createElement('option');
+      none.value = '';
+      none.textContent = "Don't check hours";
+      select.appendChild(none);
+
+      var browserZone = '';
+      try { browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+      var commonZones = COMMON_TIMEZONES.map(function(z) { return z[0]; });
+
+      var common = document.createElement('optgroup');
+      common.label = 'Common';
+      if (browserZone && commonZones.indexOf(browserZone) === -1) {
+        addTimezoneOption(common, browserZone, 'Your timezone (' + browserZone + ')');
+      }
+      COMMON_TIMEZONES.forEach(function(z) { addTimezoneOption(common, z[0], z[1]); });
+      select.appendChild(common);
+
+      if (typeof Intl.supportedValuesOf === 'function') {
+        var all = document.createElement('optgroup');
+        all.label = 'All timezones';
+        Intl.supportedValuesOf('timeZone').forEach(function(zone) {
+          if (commonZones.indexOf(zone) === -1 && zone !== browserZone) addTimezoneOption(all, zone, zone);
+        });
+        select.appendChild(all);
+      }
+      select.value = browserZone || 'America/Los_Angeles';
+    }
+
+    populateTimezones(timezoneEl);
 
     function sectionPassesFilters(s) {
       if (modalityEl.value !== 'all' && s.modality !== modalityEl.value) return false;
@@ -625,7 +701,7 @@
         '&major=' + encodeURIComponent(majorEl.value) +
         '&term=' + encodeURIComponent(termEl.value.trim());
       if (reqEl.value.trim()) params += '&requirement=' + encodeURIComponent(reqEl.value.trim());
-      if (utcOffsetEl.value.trim() !== '') params += '&utc_offset=' + encodeURIComponent(utcOffsetEl.value.trim());
+      if (timezoneEl.value) params += '&tz=' + encodeURIComponent(timezoneEl.value);
       fetch('/api/search?' + params)
         .then(function(res) {
           if (!res.ok) {

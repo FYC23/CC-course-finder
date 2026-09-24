@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from src.assist import config
 from src.assist.store import compute_options_hash, get_freshness, has_rows_for, query_rows
 from src.schedule.composite import build_composite_provider
+from src.schedule.fit import is_known_timezone
 from src.schedule.service import ScheduleService
 from src.schedule.term import parse_term_label
 
@@ -42,9 +43,11 @@ async def search(
     term: str = Query(...),
     cc_id: int | None = Query(default=None),
     requirement: str | None = Query(default=None),
-    utc_offset: int | None = Query(default=None, ge=-840, le=840,
-                                   description="Student UTC offset in minutes, e.g. 480 for UTC+8"),
+    tz: str | None = Query(default=None, max_length=64,
+                           description="Student IANA timezone, e.g. Asia/Shanghai"),
 ) -> list[dict[str, Any]]:
+    if tz is not None and not is_known_timezone(tz):
+        raise HTTPException(status_code=422, detail=f"Unknown timezone: {tz!r}")
     try:
         parse_term_label(term)
     except ValueError as err:
@@ -103,7 +106,7 @@ async def search(
         {
             **{k: v for k, v in asdict(r).items() if k != "sections"},
             "sections": [
-                section_to_dict(s, student_utc_offset_minutes=utc_offset) for s in r.sections
+                section_to_dict(s, student_tz=tz) for s in r.sections
             ],
         }
         for r in results

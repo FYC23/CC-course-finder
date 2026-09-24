@@ -196,7 +196,7 @@ def test_get_service_rebuilds_when_db_path_changes(
     assert created == [path_a, path_b]
 
 
-def test_search_accepts_utc_offset_and_returns_fit(client, monkeypatch):
+def test_search_accepts_timezone_and_returns_fit(client, monkeypatch):
     from datetime import date, time
 
     from src.schedule.models import CourseAvailability, Meeting, ParsedSection
@@ -214,14 +214,14 @@ def test_search_accepts_utc_offset_and_returns_fit(client, monkeypatch):
 
     monkeypatch.setattr(search_router, "_get_service", lambda: _Svc())
     res = client.get("/api/search", params={"school": "UCLA", "major": "Computer Science",
-                                            "term": "Fall 2026", "utc_offset": 480})
+                                            "term": "Fall 2026", "tz": "Asia/Shanghai"})
     assert res.status_code == 200
     section = res.json()[0]["sections"][0]
     assert section["fit"] == "fits"
     assert section["meetings"][0]["start_local"] == "06:30"
 
 
-def test_search_without_utc_offset_has_null_fit(client, monkeypatch):
+def test_search_without_timezone_has_null_fit(client, monkeypatch):
     from src.schedule.models import CourseAvailability, ParsedSection
     from src.web.routers import search as search_router
 
@@ -237,7 +237,8 @@ def test_search_without_utc_offset_has_null_fit(client, monkeypatch):
     assert res.json()[0]["sections"][0]["fit"] is None
 
 
-def test_search_rejects_absurd_utc_offset(client):
+@pytest.mark.parametrize("tz", ["Mars/Olympus_Mons", "../../etc/passwd", "UTC+8"])
+def test_search_rejects_unknown_timezone(client, tz):
     res = client.get("/api/search", params={"school": "UCLA", "major": "Computer Science",
-                                            "term": "Fall 2026", "utc_offset": 5000})
+                                            "term": "Fall 2026", "tz": tz})
     assert res.status_code == 422

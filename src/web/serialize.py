@@ -29,10 +29,10 @@ def meeting_to_dict(meeting: Meeting) -> dict[str, Any]:
     }
 
 
-def section_to_dict(section: ParsedSection, *, student_utc_offset_minutes: int | None) -> dict[str, Any]:
+def section_to_dict(section: ParsedSection, *, student_tz: str | None) -> dict[str, Any]:
     fit = (
-        classify_fit(section, student_utc_offset_minutes=student_utc_offset_minutes)
-        if student_utc_offset_minutes is not None
+        classify_fit(section, student_tz=student_tz)
+        if student_tz is not None
         else None
     )
     return {

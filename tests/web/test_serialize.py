@@ -13,8 +13,8 @@ _SECTION = ParsedSection(
 )
 
 
-def test_section_to_dict_without_offset():
-    d = section_to_dict(_SECTION, student_utc_offset_minutes=None)
+def test_section_to_dict_without_timezone():
+    d = section_to_dict(_SECTION, student_tz=None)
     assert d["section_id"] == "21216"
     assert d["fit"] is None
     assert d["seats_total"] == 40
@@ -27,17 +27,17 @@ def test_section_to_dict_without_offset():
     assert m["timezone"] == "America/Los_Angeles"
 
 
-def test_section_to_dict_with_offset_adds_fit():
-    # 07:30-09:35 PDT is 22:30-00:35 in UTC+8, which crosses midnight
-    d = section_to_dict(_SECTION, student_utc_offset_minutes=480)
+def test_section_to_dict_with_timezone_adds_fit():
+    # 07:30-09:35 PDT is 22:30-00:35 in Shanghai (UTC+8), which crosses midnight
+    d = section_to_dict(_SECTION, student_tz="Asia/Shanghai")
     assert d["fit"] == "conflicts"
-    # 07:30-09:35 PDT is 08:30-10:35 at UTC-6, inside the default 08..23 window
-    assert section_to_dict(_SECTION, student_utc_offset_minutes=-360)["fit"] == "fits"
+    # 07:30-09:35 Pacific is 08:30-10:35 in Denver (MDT in Aug, MST in Dec), inside 08..23
+    assert section_to_dict(_SECTION, student_tz="America/Denver")["fit"] == "fits"
 
 
 def test_section_to_dict_untimed_meeting_has_null_times():
     s = ParsedSection(section_id="1", status="open", modality="async_online", title="T", instructor="",
                       meetings=(Meeting(is_online=True),))
-    d = section_to_dict(s, student_utc_offset_minutes=480)
+    d = section_to_dict(s, student_tz="Asia/Shanghai")
     assert d["meetings"][0]["start_local"] is None
     assert d["fit"] == "async"
