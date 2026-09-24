@@ -169,3 +169,80 @@ def test_meeting_is_frozen():
     m = Meeting(days=("M",))
     with pytest.raises(Exception):
         m.days = ("T",)  # type: ignore[misc]
+
+
+# --- Phase 2 helpers ----------------------------------------------------------
+
+from src.schedule.normalize import (  # noqa: E402
+    compact_code,
+    days_from_text,
+    location_is_online,
+    status_from_seats,
+)
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("Mon/Wed", ("M", "W")),
+        ("Tu,Th", ("T", "R")),
+        ("MWF", ("M", "W", "F")),
+        ("TTh", ("T", "R")),
+        ("Saturday", ("S",)),
+        ("Sat Sun", ("S", "U")),
+        ("Asynchronous – no scheduled meeting times", ()),
+        ("", ()),
+        (None, ()),
+    ],
+)
+def test_days_from_text(raw, expected):
+    assert days_from_text(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "location,expected",
+    [
+        ("ON LINE", True),
+        ("ONLINE ONLINE", True),
+        ("ZOOM", True),
+        ("Web", True),
+        ("MTSC 106", False),
+        ("Main Campus, STEM, 310", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_location_is_online(location, expected):
+    assert location_is_online(location) is expected
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        (dict(seats_total=42, seats_used=36, seats_available=None, wait_capacity=None), "open"),
+        (dict(seats_total=42, seats_used=42, seats_available=None, wait_capacity=None), "closed"),
+        (dict(seats_total=42, seats_used=45, seats_available=None, wait_capacity=10), "waitlist"),
+        (dict(seats_total=None, seats_used=None, seats_available=3, wait_capacity=20), "open"),
+        (dict(seats_total=None, seats_used=None, seats_available=0, wait_capacity=20), "waitlist"),
+        (dict(seats_total=None, seats_used=None, seats_available=0, wait_capacity=0), "closed"),
+        (dict(seats_total=None, seats_used=None, seats_available=None, wait_capacity=None), "unknown"),
+    ],
+)
+def test_status_from_seats(kwargs, expected):
+    assert status_from_seats(**kwargs) == expected
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("MATH 400", "MATH400"),
+        ("math-400", "MATH400"),
+        ("009 C", "9C"),
+        ("150AC", "150AC"),
+        ("American River College", "AMERICANRIVERCOLLEGE"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_compact_code(value, expected):
+    assert compact_code(value) == expected

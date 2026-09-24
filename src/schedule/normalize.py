@@ -159,3 +159,78 @@ def _modality_from_meetings(meetings: Sequence[Meeting]) -> str:
     if online:
         return "sync_online" if any(m.is_timed for m in online) else "async_online"
     return "in_person"
+
+
+# --- Phase 2 helpers used by the replay extractor ---------------------------------
+
+_DAY_NAME_TO_CODE: Mapping[str, str] = {
+    "m": "M", "mo": "M", "mon": "M", "monday": "M",
+    "t": "T", "tu": "T", "tue": "T", "tues": "T", "tuesday": "T",
+    "w": "W", "we": "W", "wed": "W", "wednesday": "W",
+    "r": "R", "th": "R", "thu": "R", "thur": "R", "thurs": "R", "thursday": "R",
+    "f": "F", "fr": "F", "fri": "F", "friday": "F",
+    "s": "S", "sa": "S", "sat": "S", "saturday": "S",
+    "u": "U", "su": "U", "sun": "U", "sunday": "U",
+}
+# A run of day letters with no separators, e.g. "MWF" or "TTh".
+_COMPACT_DAYS_RE = re.compile(r"^(?:th|sa|su|[mtwrfsu])+$")
+_COMPACT_DAY_PIECE_RE = re.compile(r"th|sa|su|[mtwrfsu]")
+_ONLINE_LOCATION_WORDS = frozenset(
+    {"on", "onl", "online", "web", "internet", "distance", "remote", "zoom", "virtual"}
+)
+_NON_ALNUM_RE = re.compile(r"[^A-Za-z0-9]")
+_DIGIT_PREFIX_RE = re.compile(r"^(\d*)(.*)$")
+
+
+def days_from_text(raw: object) -> tuple[str, ...]:
+    """'Mon/Wed', 'Tu,Th', 'MWF', 'TTh' or 'Saturday' to day codes in weekday order.
+    Words that are not day names (e.g. 'Asynchronous') contribute nothing."""
+    if not isinstance(raw, str):
+        return ()
+    present: set[str] = set()
+    for token in re.findall(r"[A-Za-z]+", raw.lower()):
+        code = _DAY_NAME_TO_CODE.get(token)
+        if code is not None:
+            present.add(code)
+        elif _COMPACT_DAYS_RE.match(token):
+            present.update(_DAY_NAME_TO_CODE[p] for p in _COMPACT_DAY_PIECE_RE.findall(token))
+    return tuple(code for code in DAY_CODES if code in present)
+
+
+def location_is_online(location: object) -> bool:
+    """True when a meeting location names an online venue ('ON LINE', 'ONLINE', 'ZOOM')."""
+    if not isinstance(location, str):
+        return False
+    return bool(frozenset(_WORD_RE.findall(location.lower())) & _ONLINE_LOCATION_WORDS)
+
+
+def status_from_seats(
+    *,
+    seats_total: int | None,
+    seats_used: int | None,
+    seats_available: int | None,
+    wait_capacity: int | None,
+) -> str:
+    """Derive open/closed/waitlist from seat counts when the portal has no status field."""
+    available = seats_available
+    if available is None and seats_total is not None and seats_used is not None:
+        available = seats_total - seats_used
+    if available is None:
+        return "unknown"
+    if available > 0:
+        return "open"
+    if wait_capacity is not None and wait_capacity > 0:
+        return "waitlist"
+    return "closed"
+
+
+def compact_code(value: object) -> str:
+    """Uppercase, keep only letters and digits, and drop leading zeros from a leading digit
+    run, so 'MATH 400', 'MATH-400' and 'math400' compare equal and '009 C' equals '9C'."""
+    if not isinstance(value, str):
+        return ""
+    cleaned = _NON_ALNUM_RE.sub("", value).upper()
+    digits, rest = _DIGIT_PREFIX_RE.match(cleaned).groups()
+    if digits:
+        digits = digits.lstrip("0") or "0"
+    return f"{digits}{rest}"
