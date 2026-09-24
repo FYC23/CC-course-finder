@@ -5,11 +5,13 @@ from urllib.parse import urlsplit
 
 import requests
 
+from .listing import ListedCourse, unique_courses
 from .models import CollegeScheduleSource, CourseAvailability, Meeting, ParsedSection
 from .normalize import days_from_flags, int_or_none, normalize_modality, parse_date, parse_hhmm
 from .term import ParsedTerm, TermNotListedError, term_match_rank
 
 _PAGE_SIZE = 100
+_SEARCH_PATH = "/StudentRegistrationSsb/ssb/searchResults/searchResults"
 _COURSE_CODE_RE = re.compile(r"^\s*([A-Za-z]+)\s*[- ]?\s*([A-Za-z0-9]+)\s*$")
 _VIEW_ONLY_RE = re.compile(r"\s*\(View Only\)\s*$", re.IGNORECASE)
 
@@ -239,23 +241,13 @@ class Banner9SsbProvider:
     def supports_source(self, source: CollegeScheduleSource) -> bool:
         return source.system == "banner9_ssb"
 
-    def search_course(
-        self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str
-    ) -> CourseAvailability:
-        if not self.supports_source(source):
-            raise ValueError(
-                f"Banner9SsbProvider does not support system={source.system!r}"
-            )
-
+    def _select_term(self, source: CollegeScheduleSource, term: ParsedTerm) -> tuple[str, str]:
+        """Resolve the term code (cached per host) and select it in this session."""
         base = _base_root(source.base_url)
         cache_key = (base, term.label)
         if cache_key not in self._term_cache:
             self._term_cache[cache_key] = _resolve_term_code(self._session, base, term)
         term_code = self._term_cache[cache_key]
-
-        parsed = _parse_course_code(course_code)
-        subject, number = parsed if parsed else (course_code, "")
-
         # Establish session cookie + set term
         self._session.get(
             f"{base}/StudentRegistrationSsb/ssb/term/termSelection",
@@ -268,19 +260,46 @@ class Banner9SsbProvider:
             data={"term": term_code},
             timeout=20,
         )
+        return base, term_code
 
-        source_url = f"{base}/StudentRegistrationSsb/ssb/searchResults/searchResults"
+    def list_subject(
+        self, *, source: CollegeScheduleSource, term: ParsedTerm, subject: str
+    ) -> tuple[ListedCourse, ...]:
+        """Every course in ``subject`` this term (discover pass only; titles, no descriptions)."""
+        if not self.supports_source(source):
+            raise ValueError(f"Banner9SsbProvider does not support system={source.system!r}")
+        base, term_code = self._select_term(source, term)
+        sections, _, _ = _fetch_all_sections(
+            session=self._session,
+            source_url=f"{base}{_SEARCH_PATH}",
+            source=source,
+            subject=subject.strip().upper(),
+            number="",
+            term_code=term_code,
+        )
+        return unique_courses(
+            ListedCourse(code=s.course_code_as_listed, title=s.title) for s in sections
+        )
+
+    def search_course(
+        self, *, source: CollegeScheduleSource, term: ParsedTerm, course_code: str
+    ) -> CourseAvailability:
+        if not self.supports_source(source):
+            raise ValueError(
+                f"Banner9SsbProvider does not support system={source.system!r}"
+            )
+        base, term_code = self._select_term(source, term)
+        parsed = _parse_course_code(course_code)
+        subject, number = parsed if parsed else (course_code, "")
         sections, total_count, result_url = _fetch_all_sections(
             session=self._session,
-            source_url=source_url,
+            source_url=f"{base}{_SEARCH_PATH}",
             source=source,
             subject=subject,
             number=number,
             term_code=term_code,
         )
-
         raw_summary = f"{len(sections)} section(s) found (totalCount={total_count})"
-
         return CourseAvailability(
             cc_id=source.cc_id,
             cc_name=source.cc_name,

@@ -7,7 +7,9 @@ from urllib.parse import urlsplit
 
 import requests
 
+from .colleague_listing import fetch_subject_listing
 from .colleague_sections import parse_section
+from .listing import ListedCourse
 from .models import CollegeScheduleSource, CourseAvailability, ParsedSection
 from .term import ParsedTerm, TermNotListedError, term_match_rank
 
@@ -246,6 +248,25 @@ class ColleagueSelfServiceProvider:
             raw_summary=_build_raw_summary(
                 "" if last_response is None else last_response.text, last_stats
             ),
+        )
+
+    def list_subject(
+        self, *, source: CollegeScheduleSource, term: ParsedTerm, subject: str
+    ) -> tuple[ListedCourse, ...]:
+        """Every course in ``subject`` this term, with catalog descriptions (discover pass only)."""
+        base_root = _base_root_from_url(source.base_url)
+        subject = subject.strip().upper()
+        headers = self._bootstrap(
+            f"{base_root}/Student/Courses/Search", course_code=subject, locations=source.locations
+        )
+        term_code = self._term_code(base_root, term, source=source, headers=headers)
+        return fetch_subject_listing(
+            self._session,
+            search_url=f"{base_root}/Student/Courses/PostSearchCriteria",
+            subject=subject,
+            term_code=term_code,
+            locations=source.locations,
+            headers=headers,
         )
 
 

@@ -401,3 +401,16 @@ def test_row_matches_campus_tolerates_null_meeting_time():
     """TBA records have meetingTime: null; must not crash and row is kept."""
     row = {**_ROW_ONLINE, "meetingsFaculty": [{"meetingTime": None}]}
     assert _row_matches_campus(row, ("MS",)) is True
+
+
+# ---------------------------------------------------------------------------
+# list_subject
+# ---------------------------------------------------------------------------
+
+def test_list_subject_searches_the_whole_subject_and_dedupes_courses():
+    s = _make_session()
+    courses = Banner9SsbProvider(session=s).list_subject(
+        source=_MTSAC, term=parse_term_label("Summer 2026"), subject="math")
+    assert [(c.code, c.title) for c in courses] == [("MATH 181", "Calculus II")]
+    search_params = s.get.call_args_list[2].kwargs["params"]
+    assert (search_params["txt_subject"], search_params["txt_courseNumber"]) == ("MATH", "")

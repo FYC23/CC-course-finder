@@ -1,0 +1,16 @@
+{
+  "TotalItems": 4,
+  "TotalPages": 1,
+  "PageSize": 100,
+  "CurrentPageIndex": 1,
+  "CourseFullModels": [
+    {"Id": "23570", "SubjectCode": "MATH", "Number": "211S", "Title": "SUPPORT 4 STATS",
+     "Description": "Prerequisite: Placement by multiple measures. Corequisite: STAT C1000 (formerly MATH 11) or MATH 42. ~This course is a review of the core prerequisite skills, competencies, and concepts needed in statistics. Intended for students who are concurrently enrolled in Elementary Statistics or Statistics for Behavioral Sciences."},
+    {"Id": "25362", "SubjectCode": "MATH", "Number": "6", "Title": "MATH ANALYSIS III",
+     "Description": "Prerequisite: MATH C2220 or placement by multiple measures. (C-ID MATH 230) (A, CSU, UC, CAL-GETC) ~This course includes solid analytical geometry; partial differentiation; integral calculus of multivariable functions; two and three dimensional vectors; vector valued functions; topics in vector calculus including Green's, Divergence, and Stokes' Theorems."},
+    {"Id": "25360", "SubjectCode": "MATH", "Number": "C2210", "Title": "CALCULUS I",
+     "Description": "Prerequisite: Pre-calculus, or college algebra and trigonometry, or equivalent, or placement as determined by the college's multiple measures assessment process. (Fomerly MATH 5A) (C-ID MATH 210 and MATH 900S = MATH 5A + MATH 5B) (A, CSU, UC, CAL-GETC) ~A first course in differential and integral calculus of a single variable. Topics include limits and continuity of functions, techniques and applications of differentiation, an introduction to integration, and the Fundamental Theorem of Calculus."},
+    {"Id": "25361", "SubjectCode": "MATH", "Number": "C2220", "Title": "CALCULUS II",
+     "Description": "Prerequisite: Calculus I: Early Transcendentals ( MATH C2210 ), or equivalent, or placement as determined by the college's multiple measures assessment process. (Formerly MATH 5B) (C-ID MATH220 and MATH 900S = MATH 5A + MATH 5B) (A, CSU, UC, CAL-GETC) ~A second course in differential and integral calculus of a single variable. Topics include applications of integration, techniques of integration, infinite sequences and series, and the calculus of parametric and polar equations."}
+  ]
+}
