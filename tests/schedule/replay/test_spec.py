@@ -204,3 +204,20 @@ def test_const_empty_string_counts_as_a_source(tmp_path: Path):
     }
     spec = load_spec(_write(tmp_path, _variant(extract=extract)))
     assert spec.extract.fields["title"] == ValueRule(const="")
+
+
+def test_step_url_placeholder_in_host_rejected(tmp_path: Path):
+    steps = [{"id": "s", "method": "GET", "url": "https://example.edu{subject}"}]
+    with pytest.raises(SpecInvalid, match="url"):
+        load_spec(_write(tmp_path, _variant(steps=steps)))
+
+
+def test_step_url_placeholder_in_path_loads(tmp_path: Path):
+    steps = [{"id": "s", "method": "GET", "url": "https://example.edu/{subject}"}]
+    spec = load_spec(_write(tmp_path, _variant(steps=steps)))
+    assert spec.steps[0].url == "https://example.edu/{subject}"
+
+
+def test_step_url_with_port_and_no_path_loads(tmp_path: Path):
+    steps = [{"id": "s", "method": "GET", "url": "https://example.edu:8443"}]
+    assert load_spec(_write(tmp_path, _variant(steps=steps))).steps[0].url == "https://example.edu:8443"

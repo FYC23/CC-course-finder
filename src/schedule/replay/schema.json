@@ -120,7 +120,7 @@
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
         "method": {"enum": ["GET", "POST"]},
-        "url": {"type": "string", "pattern": "^https://"},
+        "url": {"type": "string", "pattern": "^https://[A-Za-z0-9.-]+(:[0-9]+)?(/|$)"},
         "query": {"$ref": "#/$defs/stringMap"},
         "form": {"$ref": "#/$defs/stringMap"},
         "json": {"type": "object"},

@@ -130,6 +130,8 @@ class ReplayExecutor:
         if step.cache and key in self._cache:
             return self._cache[key]
         response = self._send(step.method, url, query=query, form=form, json_body=json_body, headers=headers)
+        if urlsplit(str(response.url)).scheme != "https":
+            raise PortalChanged(f"step {step.id!r} ended on a non-https URL")
         if step.cache:
             self._cache[key] = response
         return response

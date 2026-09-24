@@ -193,3 +193,22 @@ def test_executor_sets_identifying_user_agent():
     session = FakeSession({})
     ReplayExecutor(session, throttle=HostThrottle(0.0))
     assert "cc-course-finder" in session.headers["User-Agent"]
+
+
+def test_redirect_to_non_https_url_is_portal_changed(tmp_path):
+    spec = _spec(tmp_path, [{"id": "search", "method": "GET", "url": "https://example.edu/api"}])
+    session = FakeSession({"https://example.edu/api": FakeResponse(text='{"rows": []}', url="http://example.edu/api")})
+    with pytest.raises(PortalChanged, match="'search' ended on a non-https URL"):
+        _run(_executor(session), spec)
+
+
+def test_non_https_hop_in_an_earlier_step_is_portal_changed(tmp_path):
+    spec = _spec(tmp_path, [
+        {"id": "boot", "method": "GET", "url": "https://example.edu/boot"},
+        {"id": "search", "method": "GET", "url": "https://example.edu/api"},
+    ])
+    session = FakeSession({"https://example.edu/boot": FakeResponse(text="", url="http://example.edu/login"),
+                           "https://example.edu/api": '{"rows": []}'})
+    with pytest.raises(PortalChanged, match="'boot'"):
+        _run(_executor(session), spec)
+    assert len(session.calls) == 1
